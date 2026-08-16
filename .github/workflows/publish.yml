@@ -20,3 +20,7 @@ jobs:
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
       - run: uv build
       - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+        with:
+          # A re-push of an already-published tag (e.g. a duplicate tag push)
+          # must end green, not as a red 400 File-already-exists failure.
+          skip-existing: true
