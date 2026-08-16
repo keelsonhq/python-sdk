@@ -1,0 +1,29 @@
+{
+  "_comment": "Shared golden vectors for workspace group key normalization; all implementations must agree. Pipeline: trim -> NFKC -> casefold -> NFKC -> collapse whitespace to '-' -> allowlist (L*/M*/N* + '-' '_'; first char L*/N*) -> reject empty -> reject > 64.",
+  "valid": [
+    {"input": "sales", "output": "sales", "note": "already canonical"},
+    {"input": "Sales Team", "output": "sales-team", "note": "casefold + whitespace collapse"},
+    {"input": "  Padded  ", "output": "padded", "note": "outer whitespace trimmed"},
+    {"input": "Sales   Team\tLead", "output": "sales-team-lead", "note": "runs of mixed whitespace collapse to single '-'"},
+    {"input": "ＡＢＣ", "output": "abc", "note": "fullwidth letters via NFKC then casefold"},
+    {"input": "団体１２３", "output": "団体123", "note": "CJK preserved, fullwidth digits folded"},
+    {"input": "ＴＥＡＭ　壱", "output": "team-壱", "note": "ideographic space collapses to '-'"},
+    {"input": "経理", "output": "経理", "note": "Japanese preserved unchanged"},
+    {"input": "Café", "output": "café", "note": "accented latin, category L"},
+    {"input": "a_b-c", "output": "a_b-c", "note": "underscore and hyphen allowed"},
+    {"input": "team1", "output": "team1", "note": "trailing digit"},
+    {"input": "1team", "output": "1team", "note": "digit start is allowed (first char N*)"}
+  ],
+  "invalid": [
+    {"input": "", "reason": "empty"},
+    {"input": "   ", "reason": "empty", "note": "whitespace only -> empty after trim"},
+    {"input": "_leading", "reason": "leading_char", "note": "underscore may not start a key"},
+    {"input": "-leading", "reason": "leading_char", "note": "hyphen may not start a key"},
+    {"input": "a/b", "reason": "disallowed_char", "note": "slash rejected by allowlist"},
+    {"input": "a?b", "reason": "disallowed_char", "note": "question mark rejected"},
+    {"input": "a.b", "reason": "disallowed_char", "note": "dot rejected"},
+    {"input": "a​b", "reason": "disallowed_char", "note": "zero-width space (Cf) rejected"},
+    {"input": "🎉", "reason": "disallowed_char", "note": "emoji (So) rejected"},
+    {"input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "reason": "too_long", "note": "67 chars > 64"}
+  ]
+}

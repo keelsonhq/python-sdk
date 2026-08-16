@@ -1,0 +1,60 @@
+{
+  "description": "Shared key-grammar cases for the data-files `files` SDK. Every language SDK must accept `valid` keys and reject `invalid` keys with a FilesError. Control chars cover Unicode category Cc (C0, DEL, C1); segments are bounded to NAME_MAX (255 bytes).",
+  "valid": [
+    "seen_urls.json",
+    "cache/hn.json",
+    "a/b/c.txt",
+    "state",
+    "日本語.json"
+  ],
+  "invalid": [
+    {
+      "key": "",
+      "reason": "empty"
+    },
+    {
+      "key": "/leading.json",
+      "reason": "leading slash"
+    },
+    {
+      "key": "trailing/",
+      "reason": "trailing slash"
+    },
+    {
+      "key": "a//b",
+      "reason": "empty segment"
+    },
+    {
+      "key": "a/./b",
+      "reason": "dot segment"
+    },
+    {
+      "key": "a/../b",
+      "reason": "dotdot segment"
+    },
+    {
+      "key": "..",
+      "reason": "dotdot segment"
+    },
+    {
+      "key": "a\u0000b",
+      "reason": "control character (C0 NUL)"
+    },
+    {
+      "key": "a\u001fb",
+      "reason": "control character (C0 US)"
+    },
+    {
+      "key": "ab",
+      "reason": "control character (C1 NEL)"
+    },
+    {
+      "key": "ab",
+      "reason": "control character (C1 APC)"
+    },
+    {
+      "key": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "reason": "single segment over 255 bytes (NAME_MAX)"
+    }
+  ]
+}

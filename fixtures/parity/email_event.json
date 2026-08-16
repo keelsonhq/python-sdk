@@ -1,0 +1,9 @@
+{
+  "event_id": "evt_parity01",
+  "event_type": "bounce",
+  "email_address": "bounced@example.com",
+  "resend_email_id": "re_001",
+  "bounce_type": "hard",
+  "detail": "Mailbox not found",
+  "timestamp": "2026-01-15T11:00:00Z"
+}

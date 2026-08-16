@@ -1,0 +1,21 @@
+{
+  "description": "list() contract for the data-files `files` SDK: KEELSON_FILES_PREFIX is stripped from each GCS object name, keys are returned in a single cross-language order (UTF-8 byte order == Python code-point order == Go byte order == Node compareUtf8), and paging is absorbed internally. Includes a BMP private-use char (U+E000) and a non-BMP char (U+10000) to lock the ordering: JS's default UTF-16 sort would place U+10000 (surrogate 0xD800) before U+E000 \u2014 wrong.",
+  "files_prefix": "tenants/t/apps/a/files/",
+  "object_names": [
+    "tenants/t/apps/a/files/b.txt",
+    "tenants/t/apps/a/files/a.txt",
+    "tenants/t/apps/a/files/cache/z.json",
+    "tenants/t/apps/a/files/cache/a.json",
+    "tenants/t/apps/a/files/\ue000.txt",
+    "tenants/t/apps/a/files/\ud800\udc00.txt",
+    "tenants/t/apps/a/files/"
+  ],
+  "expected": [
+    "a.txt",
+    "b.txt",
+    "cache/a.json",
+    "cache/z.json",
+    "\ue000.txt",
+    "\ud800\udc00.txt"
+  ]
+}

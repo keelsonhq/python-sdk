@@ -1,0 +1,7 @@
+{
+  "description": "GCS object-name percent-encoding for the data-files `files` SDK. The SDK must percent-encode the full object name (KEELSON_FILES_PREFIX + key): '/' as %2F so each key is a single flat object (never a nested GCS path), space as %20, and non-ASCII as UTF-8 %XX. All three SDKs must (a) store exactly `object_name` after write(`key`), and (b) emit `encoded_object` on the request URL, proving that '/' is percent-encoded on the wire rather than passed through.",
+  "files_prefix": "tenants/t/apps/a/files/",
+  "key": "dir sub/日本.txt",
+  "object_name": "tenants/t/apps/a/files/dir sub/日本.txt",
+  "encoded_object": "tenants%2Ft%2Fapps%2Fa%2Ffiles%2Fdir%20sub%2F%E6%97%A5%E6%9C%AC.txt"
+}

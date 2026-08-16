@@ -1,0 +1,7 @@
+{
+  "description": "Missing-read contract for the data-files `files` SDK. read() returns None / null / (nil,false) only for a 404 because absence is the normal case. Deleting a missing key succeeds and is idempotent. All other non-2xx statuses (401 / 403 / 429 / 5xx) are real failures and must raise or return a Files error, never be treated as missing.",
+  "missing_status": 404,
+  "read_missing_returns_empty": true,
+  "delete_missing_is_success": true,
+  "error_statuses": [401, 403, 429, 500, 503]
+}

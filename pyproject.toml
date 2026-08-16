@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "keelson-sdk"
+version = "0.1.0"
+description = "Keelson Python SDK"
+readme = "README.md"
+license = "MIT"
+authors = [{ name = "Keelson" }]
+requires-python = ">=3.10"
+dependencies = []
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+]
+
+[project.urls]
+Homepage = "https://keelson.dev"
+Repository = "https://github.com/keelsonhq/python-sdk"
+
+[tool.setuptools]
+packages = ["keelson", "keelson_media", "keelson_files", "keelson_identity", "keelson_email"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+]
+
+[tool.uv]
+python-preference = "only-system"
+python-downloads = "never"
+
+[tool.pytest.ini_options]
+testpaths = [
+    "keelson_identity/tests",
+    "keelson_email/tests",
+    "keelson_media/tests",
+    "keelson_files/tests",
+]

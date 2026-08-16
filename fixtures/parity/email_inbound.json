@@ -1,0 +1,44 @@
+{
+  "delivery_id": "dlv_parity01",
+  "attempt": 1,
+  "received_at": "2026-01-15T10:00:00Z",
+  "sent_at": "2026-01-15T09:59:00Z",
+  "from": {
+    "name": "Sender",
+    "address": "sender@example.com"
+  },
+  "to": [
+    {
+      "name": "Receiver",
+      "address": "receiver@example.com"
+    }
+  ],
+  "cc": [],
+  "reply_to": null,
+  "subject": "Parity test",
+  "text": "Hello from parity test",
+  "html": null,
+  "provider_message_id": "msg_provider_01",
+  "in_reply_to": null,
+  "references": ["ref-001"],
+  "envelope_to": "receiver@example.com",
+  "authentication": {
+    "spf": "pass",
+    "dkim": "pass",
+    "dmarc": "pass"
+  },
+  "spam": {
+    "score": 0.1,
+    "verdict": "clean",
+    "reasons": []
+  },
+  "attachments": [
+    {
+      "id": "att_001",
+      "filename": "document.pdf",
+      "content_type": "application/pdf",
+      "size_bytes": 1024,
+      "download_url": "/v1/email/attachments/att_001"
+    }
+  ]
+}

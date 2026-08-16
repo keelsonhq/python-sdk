@@ -1,0 +1,22 @@
+{
+  "user": {
+    "id": "usr_parity01",
+    "email": "taro@example.com",
+    "name": "Taro Yamada"
+  },
+  "tenant": {
+    "id": "tenant_001",
+    "role": "admin"
+  },
+  "app": {
+    "id": "app_xyz",
+    "permissions": ["manage", "view"],
+    "roles": ["editor"]
+  },
+  "authz": {
+    "version": 2
+  },
+  "attributes": {
+    "groups": ["admins", "everyone", "sales"]
+  }
+}

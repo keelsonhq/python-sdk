@@ -1,0 +1,25 @@
+{
+  "items": [
+    {
+      "id": "grp_admins01",
+      "key": "admins",
+      "display_name": "Administrators",
+      "kind": "system",
+      "system_kind": "admin"
+    },
+    {
+      "id": "grp_editors01",
+      "key": "editors",
+      "display_name": "Editors",
+      "kind": "custom",
+      "system_kind": null
+    },
+    {
+      "id": "grp_keyless01",
+      "key": null,
+      "display_name": "Keyless Team",
+      "kind": "custom",
+      "system_kind": null
+    }
+  ]
+}

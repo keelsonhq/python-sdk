@@ -1,0 +1,19 @@
+{
+  "items": [
+    {
+      "id": "usr_m01",
+      "email": "alice@example.com",
+      "name": "Alice",
+      "role": "admin"
+    },
+    {
+      "id": "usr_m02",
+      "email": "bob@example.com",
+      "name": "Bob",
+      "role": ""
+    }
+  ],
+  "limit": 25,
+  "offset": 0,
+  "next_offset": null
+}
