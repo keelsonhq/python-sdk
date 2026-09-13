@@ -207,6 +207,17 @@ Email event webhook payload (bounce/complaint/delivery).
 | `detail` | string \| null | exact match |
 | `timestamp` | string (ISO 8601) | exact match |
 
+### `workspace_identity_parity.json`
+
+Workspace environment-variable compatibility cases. The workspace identifier
+takes precedence over the legacy tenant identifier when both are present.
+
+| Field | Type | Parity assertion |
+| --- | --- | --- |
+| `cases[].workspace_id` | string \| null | value of `KEELSON_WORKSPACE_ID` |
+| `cases[].tenant_id` | string \| null | value of legacy `KEELSON_TENANT_ID` |
+| `cases[].expected` | string \| null | resolved workspace identifier; `null` means the SDK returns an empty string |
+
 ## Adding a new fixture
 
 1. Create `{domain}_{name}.json` in this directory.

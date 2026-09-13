@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 import pytest
+from sdk_test_fixtures import parity_fixtures_dir
 
 from keelson_files.client import _workspace_id
 
-
-FIXTURE = Path(__file__).resolve().parents[3] / "testdata" / "workspace_identity_parity.json"
+FIXTURE = parity_fixtures_dir(__file__) / "workspace_identity_parity.json"
 
 
 @pytest.mark.parametrize(

@@ -1,0 +1,35 @@
+{
+  "fixture": "workspace_identity_parity",
+  "cases": [
+    {
+      "name": "workspace_only",
+      "workspace_id": "workspace-new",
+      "tenant_id": null,
+      "expected": "workspace-new"
+    },
+    {
+      "name": "tenant_only",
+      "workspace_id": null,
+      "tenant_id": "workspace-legacy",
+      "expected": "workspace-legacy"
+    },
+    {
+      "name": "both_equal",
+      "workspace_id": "workspace-shared",
+      "tenant_id": "workspace-shared",
+      "expected": "workspace-shared"
+    },
+    {
+      "name": "both_different",
+      "workspace_id": "workspace-preferred",
+      "tenant_id": "workspace-ignored",
+      "expected": "workspace-preferred"
+    },
+    {
+      "name": "neither",
+      "workspace_id": null,
+      "tenant_id": null,
+      "expected": null
+    }
+  ]
+}
