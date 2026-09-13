@@ -2,8 +2,9 @@
 
 Provides ``on_receive`` decorator for inbound email handling and
 ``send()`` for outbound email.  The SDK automatically reads
-``KEELSON_EMAIL_API_URL`` and ``KEELSON_EMAIL_TOKEN`` from the
-environment (injected by Keelson at deploy time).
+``KEELSON_EMAIL_BASE_URL``, ``KEELSON_EMAIL_API_URL``, and
+``KEELSON_EMAIL_TOKEN`` from the environment (injected by Keelson at deploy
+time). The gateway base URL is preferred when it is available.
 
 Minimal example::
 
@@ -49,6 +50,11 @@ from urllib.request import Request, urlopen
 
 logger = logging.getLogger(__name__)
 
+# Explicit UA: urllib's default ``Python-urllib/3.x`` is blocked by Cloudflare
+# Browser Integrity Check (Error 1010 browser_signature_banned) on the
+# ``*.keelson.run`` / ``*.keelson-stage.run`` zones. See T-0595.
+_SDK_USER_AGENT = "Keelson-Python-SDK/0.1.1"
+
 _WEBHOOK_PATH = "/api/webhooks/email"
 _EVENT_WEBHOOK_PATH = "/api/webhooks/email-events"
 _DEFAULT_PORT = 8000
@@ -76,6 +82,17 @@ def _api_url() -> str:
     return url
 
 
+def _gateway_base_url() -> str | None:
+    url = os.environ.get("KEELSON_EMAIL_BASE_URL", "").strip().rstrip("/")
+    return url or None
+
+
+def _send_url() -> str:
+    if base_url := _gateway_base_url():
+        return f"{base_url}/__keelson/email/send"
+    return f"{_api_url()}/v1/email/send"
+
+
 def _token() -> str:
     token = os.environ.get("KEELSON_EMAIL_TOKEN", "").strip()
     if not token:
@@ -87,7 +104,10 @@ def _token() -> str:
 
 
 def _auth_headers() -> dict[str, str]:
-    return {"Authorization": f"Bearer {_token()}"}
+    return {
+        "Authorization": f"Bearer {_token()}",
+        "User-Agent": _SDK_USER_AGENT,
+    }
 
 
 def _webhook_secret() -> str | None:
@@ -104,6 +124,7 @@ def _mode() -> str:
 # This matches the Media SDK's platform detection.
 _CORE_IDENTIFIER_ENVS = (
     "KEELSON_APP_ID",
+    "KEELSON_WORKSPACE_ID",
     "KEELSON_TENANT_ID",
     "KEELSON_DEPLOY_ID",
 )
@@ -234,8 +255,9 @@ def _webhook_signature_required() -> bool:
     - ``KEELSON_MODE=keelson`` → required.
     - ``KEELSON_MODE=local`` → not required (local development accepts unsigned).
     - ``KEELSON_MODE`` unset but a platform environment is detected
-      (``KEELSON_APP_ID`` / ``KEELSON_TENANT_ID`` / ``KEELSON_DEPLOY_ID``) →
-      required, so a misconfigured platform deploy never silently accepts unsigned.
+      (``KEELSON_APP_ID`` / ``KEELSON_WORKSPACE_ID`` / ``KEELSON_DEPLOY_ID``;
+      the former ``KEELSON_TENANT_ID`` name remains a deprecated alias) → required,
+      so a misconfigured platform deploy never silently accepts unsigned.
     - ``KEELSON_MODE`` unset and no platform env → not required (zero-config dev).
     - Any other non-empty mode → required (fail closed on an unrecognized mode).
     """
@@ -292,7 +314,10 @@ class InboundAttachment:
 
     def download(self, *, timeout_sec: float = 30.0) -> bytes:
         """Download the attachment content as bytes."""
-        url = urljoin(_api_url() + "/", self.download_url.lstrip("/"))
+        if base_url := _gateway_base_url():
+            url = f"{base_url}/__keelson/email/attachments/{self.id}"
+        else:
+            url = urljoin(_api_url() + "/", self.download_url.lstrip("/"))
         headers = {**_auth_headers(), "Accept": "application/octet-stream"}
         req = Request(url, method="GET", headers=headers)
         try:
@@ -405,7 +430,11 @@ class InboundMessage:
 
 @dataclass(frozen=True)
 class EmailEventPayload:
-    """Bounce/complaint/delivery event from Keelson."""
+    """Bounce/complaint/delivery event from Keelson.
+
+    ``resend_email_id`` is deprecated; use ``send_id`` to correlate an event
+    with a send.
+    """
 
     event_id: str
     event_type: str  # "bounce", "complaint", "delivered"
@@ -414,6 +443,8 @@ class EmailEventPayload:
     bounce_type: str | None
     detail: str | None
     timestamp: str
+    provider: str | None = None
+    send_id: str | None = None
 
     @classmethod
     def from_webhook_payload(cls, data: dict[str, Any]) -> EmailEventPayload:
@@ -421,6 +452,8 @@ class EmailEventPayload:
             event_id=data.get("event_id", ""),
             event_type=data.get("event_type", ""),
             email_address=data.get("email_address", ""),
+            provider=data.get("provider"),
+            send_id=data.get("send_id"),
             resend_email_id=data.get("resend_email_id"),
             bounce_type=data.get("bounce_type"),
             detail=data.get("detail"),
@@ -628,7 +661,7 @@ def send(
             for att in attachments
         ]
 
-    url = f"{_api_url()}/v1/email/send"
+    url = _send_url()
     body = json.dumps(payload).encode("utf-8")
     headers = {
         **_auth_headers(),

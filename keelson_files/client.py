@@ -31,6 +31,7 @@ import builtins
 import errno
 import json
 import os
+import re
 import secrets
 import stat
 import time
@@ -39,7 +40,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
 
-_SDK_USER_AGENT = "Keelson-Python-SDK/0.1.0"
+_SDK_USER_AGENT = "Keelson-Python-SDK/0.1.1"
 
 # HTTP request timeout (seconds) for GCS / metadata-server calls. Matches the
 # media SDK's 30s.
@@ -58,6 +59,7 @@ _DEFAULT_METADATA_URL = (
     "http://metadata.google.internal/computeMetadata/v1/"
     "instance/service-accounts/default/token"
 )
+
 
 class FilesError(RuntimeError):
     """Raised on configuration errors and non-404 backend failures."""
@@ -169,6 +171,7 @@ def _files_prefix() -> str:
 # Platform-owned identifiers whose presence means the app is running on Keelson.
 _CORE_IDENTIFIER_ENVS = (
     "KEELSON_APP_ID",
+    "KEELSON_WORKSPACE_ID",
     "KEELSON_TENANT_ID",
     "KEELSON_DEPLOY_ID",
 )
@@ -179,10 +182,15 @@ def _is_platform_env() -> bool:
 
 
 def _has_identity() -> bool:
-    """True when the tenant + app identity that composes the prefix is present."""
-    return bool(
-        os.environ.get("KEELSON_APP_ID", "").strip()
-        and os.environ.get("KEELSON_TENANT_ID", "").strip()
+    """True when the workspace + app identity is present."""
+    return bool(os.environ.get("KEELSON_APP_ID", "").strip() and _workspace_id())
+
+
+def _workspace_id() -> str:
+    """Return the canonical workspace ID with the legacy env as fallback."""
+    return (
+        os.environ.get("KEELSON_WORKSPACE_ID", "").strip()
+        or os.environ.get("KEELSON_TENANT_ID", "").strip()
     )
 
 
@@ -194,7 +202,7 @@ def _resolve_mode() -> str:
 
     - ``KEELSON_MODE=keelson`` → remote. Requires ``KEELSON_FILES_BUCKET`` /
       ``KEELSON_FILES_PREFIX`` **and** the platform identity
-      (``KEELSON_APP_ID`` / ``KEELSON_TENANT_ID``); any missing → ``FilesError``
+      (``KEELSON_APP_ID`` / ``KEELSON_WORKSPACE_ID``); any missing → ``FilesError``
       (capability unavailable). ADC availability is validated at operation time.
     - Partial config (exactly one of bucket / prefix) → ``FilesError`` in any
       mode.
@@ -225,7 +233,8 @@ def _resolve_mode() -> str:
         if not _has_identity():
             raise FilesError(
                 "KEELSON_MODE=keelson but the platform identity is missing "
-                "(KEELSON_APP_ID and KEELSON_TENANT_ID must be set); the Files "
+                "(KEELSON_APP_ID and KEELSON_WORKSPACE_ID must be set; "
+                "KEELSON_TENANT_ID remains a deprecated alias); the Files "
                 "capability is unavailable for this deployment."
             )
         return "remote"
@@ -237,7 +246,8 @@ def _resolve_mode() -> str:
         if _is_platform_env():
             raise FilesError(
                 "Platform environment detected "
-                "(KEELSON_APP_ID / KEELSON_TENANT_ID / KEELSON_DEPLOY_ID set) but "
+                "(KEELSON_APP_ID / KEELSON_WORKSPACE_ID (or deprecated "
+                "KEELSON_TENANT_ID alias) / KEELSON_DEPLOY_ID set) but "
                 "KEELSON_MODE is unset; refusing to fall back to local storage. "
                 "Set KEELSON_MODE=local for local development or KEELSON_MODE=keelson "
                 "for platform storage."
@@ -276,8 +286,16 @@ def _resolve_mode() -> str:
 # always same-filesystem and ``list`` never surfaces them.
 
 _TMP_PREFIX = "\x01tmp"
+_WINDOWS_TMP_PREFIX = ".keelson-tmp-"
 _O_NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
 _O_DIRECTORY = getattr(os, "O_DIRECTORY", 0)
+_WINDOWS_RESERVED_STEM = re.compile(
+    r"^(con|prn|aux|nul|conin\$|conout\$|com[1-9¹²³]|lpt[1-9¹²³])$",
+    re.IGNORECASE,
+)
+_WINDOWS_INVALID_CHARS = re.compile(r'[<>:"\\|?*]')
+_WINDOWS_INTERNAL_TEMP_NAME = re.compile(r"^\.keelson-tmp-[0-9a-f]{24}$", re.IGNORECASE)
+_WINDOWS_NAME_SURROGATE_BIT = 0x20000000
 
 
 class _ConfinementError(FilesError):
@@ -291,6 +309,96 @@ def _local_dir() -> Path:
 def _split_key(key: str) -> tuple[list[str], str]:
     parts = key.split("/")
     return parts[:-1], parts[-1]
+
+
+def _supports_dir_fd_backend() -> bool:
+    """Whether this Python runtime exposes the POSIX descriptor APIs we use."""
+    return os.name == "posix"
+
+
+def _validate_windows_local_path(value: str, *, os_name: str | None = None) -> None:
+    """Reject key segments that Windows interprets as filesystem syntax."""
+    if (os_name or os.name) != "nt":
+        return
+    for segment in value.split("/"):
+        if not segment:  # trailing slash is valid for list prefixes
+            continue
+        if (
+            _WINDOWS_INVALID_CHARS.search(segment)
+            or segment.endswith((".", " "))
+            or _is_windows_reserved_name(segment)
+            or _WINDOWS_INTERNAL_TEMP_NAME.fullmatch(segment)
+        ):
+            raise FilesError(
+                "key or prefix contains a name that Windows cannot store "
+                f"locally: {segment!r}."
+            )
+
+
+def _is_windows_reserved_name(segment: str) -> bool:
+    """Match Win32 device names after its stem and space normalization."""
+    stem = segment.split(".", 1)[0].rstrip(" ")
+    return _WINDOWS_RESERVED_STEM.fullmatch(stem) is not None
+
+
+def _is_path_redirect(info: os.stat_result) -> bool:
+    """Return whether an lstat result can redirect path resolution on Windows.
+
+    ``Path.is_junction`` was only added in Python 3.12. The Windows stat fields
+    used here have existed since Python 3.8, so this also protects supported
+    Python 3.10 and 3.11 runtimes. Unknown reparse points are rejected
+    conservatively when the runtime does not expose their tag.
+    """
+    if stat.S_ISLNK(info.st_mode):
+        return True
+    reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+    if not getattr(info, "st_file_attributes", 0) & reparse_flag:
+        return False
+    tag = getattr(info, "st_reparse_tag", None)
+    return tag is None or bool(tag & _WINDOWS_NAME_SURROGATE_BIT)
+
+
+def _open_local_path_for_read(path: Path):
+    """Open a local file without preventing an atomic replace on Windows."""
+    if os.name != "nt":
+        return path.open("rb")
+
+    # CPython's regular open() does not request FILE_SHARE_DELETE, so another
+    # SDK writer cannot atomically replace the file while a reader holds it.
+    # CreateFileW supplies Unix-like sharing while OPEN_REPARSE_POINT prevents
+    # a final component swapped to a symlink from being followed.
+    import ctypes
+    import msvcrt
+    from ctypes import wintypes
+
+    create_file = ctypes.WinDLL("kernel32", use_last_error=True).CreateFileW
+    create_file.argtypes = (
+        wintypes.LPCWSTR,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        ctypes.c_void_p,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.HANDLE,
+    )
+    create_file.restype = wintypes.HANDLE
+    handle = create_file(
+        str(path),
+        0x80000000,  # GENERIC_READ
+        0x00000001 | 0x00000002 | 0x00000004,  # SHARE_READ|WRITE|DELETE
+        None,
+        3,  # OPEN_EXISTING
+        0x00200000,  # FILE_FLAG_OPEN_REPARSE_POINT
+        None,
+    )
+    if handle == wintypes.HANDLE(-1).value:
+        raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        fd = msvcrt.open_osfhandle(handle, os.O_RDONLY)
+    except BaseException:
+        ctypes.WinDLL("kernel32", use_last_error=True).CloseHandle(handle)
+        raise
+    return os.fdopen(fd, "rb")
 
 
 def _open_base_fd(*, create: bool) -> int:
@@ -320,12 +428,8 @@ def _descend_to_parent(base_fd: int, dirs: list[str], *, create: bool) -> int:
                 except FileExistsError:
                     pass
             if stat.S_ISLNK(os.lstat(comp, dir_fd=fd).st_mode):
-                raise _ConfinementError(
-                    "resolved path escapes the files directory."
-                )
-            nfd = os.open(
-                comp, os.O_RDONLY | _O_DIRECTORY | _O_NOFOLLOW, dir_fd=fd
-            )
+                raise _ConfinementError("resolved path escapes the files directory.")
+            nfd = os.open(comp, os.O_RDONLY | _O_DIRECTORY | _O_NOFOLLOW, dir_fd=fd)
             os.close(fd)
             fd = nfd
         return fd
@@ -342,12 +446,10 @@ def _collision_error(key: str) -> FilesError:
     )
 
 
-def _write_local(key: str, data: bytes) -> None:
+def _write_local_fd(key: str, data: bytes) -> None:
     dirs, name = _split_key(key)
     try:
-        parent_fd = _descend_to_parent(
-            _open_base_fd(create=True), dirs, create=True
-        )
+        parent_fd = _descend_to_parent(_open_base_fd(create=True), dirs, create=True)
     except OSError as exc:
         if exc.errno in (errno.ENOTDIR, errno.EEXIST):
             raise _collision_error(key) from exc  # a parent segment is a file
@@ -385,7 +487,7 @@ def _unlink_at(dir_fd: int, name: str) -> None:
         pass
 
 
-def _read_local(key: str) -> bytes | None:
+def _read_local_fd(key: str) -> bytes | None:
     dirs, name = _split_key(key)
     try:
         base_fd = _open_base_fd(create=False)
@@ -401,16 +503,12 @@ def _read_local(key: str) -> bytes | None:
         raise FilesError(f"read failed for key {key!r}: {exc}") from exc
     try:
         try:
-            file_fd = os.open(
-                name, os.O_RDONLY | _O_NOFOLLOW, dir_fd=parent_fd
-            )
+            file_fd = os.open(name, os.O_RDONLY | _O_NOFOLLOW, dir_fd=parent_fd)
         except (FileNotFoundError, NotADirectoryError):
             return None
         except OSError as exc:
             if exc.errno == errno.ELOOP:
-                raise FilesError(
-                    "resolved path escapes the files directory."
-                ) from exc
+                raise FilesError("resolved path escapes the files directory.") from exc
             raise FilesError(f"read failed for key {key!r}: {exc}") from exc
         try:
             with os.fdopen(file_fd, "rb") as handle:
@@ -421,7 +519,7 @@ def _read_local(key: str) -> bytes | None:
         os.close(parent_fd)
 
 
-def _delete_local(key: str) -> None:
+def _delete_local_fd(key: str) -> None:
     dirs, name = _split_key(key)
     try:
         base_fd = _open_base_fd(create=False)
@@ -450,7 +548,7 @@ def _delete_local(key: str) -> None:
         os.close(parent_fd)
 
 
-def _list_local(prefix: str) -> list[str]:
+def _list_local_fd(prefix: str) -> list[str]:
     try:
         base_fd = _open_base_fd(create=False)
     except FileNotFoundError:
@@ -491,6 +589,212 @@ def _list_local(prefix: str) -> list[str]:
         os.close(base_fd)
     keys.sort()
     return keys
+
+
+# ---------------------------------------------------------------------------
+# Path-based local-development backend (Windows)
+# ---------------------------------------------------------------------------
+#
+# CPython does not support ``dir_fd`` on Windows. This backend preserves the
+# same literal layout, validates Windows path syntax, resolves the storage root,
+# and rejects path-redirecting reparse points observed with ``lstat``. Like the
+# Node non-Linux backend, every path operation (including read and list) has a
+# check-then-act window and is used only for local development.
+
+
+def _local_base_path(*, create: bool) -> Path:
+    base = _local_dir().absolute()
+    if create:
+        base.mkdir(parents=True, exist_ok=True)
+    return base.resolve(strict=True)
+
+
+def _descend_path(base: Path, dirs: list[str], *, create: bool) -> Path:
+    current = base
+    for comp in dirs:
+        next_path = current / comp
+        if create:
+            try:
+                next_path.mkdir()
+            except FileExistsError:
+                pass
+        info = next_path.lstat()
+        if _is_path_redirect(info):
+            raise _ConfinementError("resolved path escapes the files directory.")
+        if not stat.S_ISDIR(info.st_mode):
+            raise NotADirectoryError(errno.ENOTDIR, "not a directory", str(next_path))
+        current = next_path
+    if os.path.commonpath((str(base), str(current))) != str(base):
+        raise _ConfinementError("resolved path escapes the files directory.")
+    return current
+
+
+def _write_local_path(key: str, data: bytes) -> None:
+    _validate_windows_local_path(key)
+    dirs, name = _split_key(key)
+    try:
+        parent = _descend_path(_local_base_path(create=True), dirs, create=True)
+    except OSError as exc:
+        if exc.errno in (errno.ENOTDIR, errno.EEXIST):
+            raise _collision_error(key) from exc
+        raise FilesError(f"write failed for key {key!r}: {exc}") from exc
+
+    tmp = parent / (_WINDOWS_TMP_PREFIX + secrets.token_hex(12))
+    target = parent / name
+    try:
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+        try:
+            with os.fdopen(fd, "wb") as handle:
+                handle.write(data)
+            attempts = 20 if os.name == "nt" else 1
+            for attempt in range(attempts):
+                try:
+                    os.replace(tmp, target)
+                    break
+                except OSError as replace_exc:
+                    # Windows rename can briefly report access/sharing errors
+                    # while another reader closes its handle. Retry regular-file
+                    # targets, but let directory collisions reach the classifier
+                    # below immediately.
+                    if attempt + 1 == attempts or getattr(
+                        replace_exc, "winerror", None
+                    ) not in (5, 32):
+                        raise
+                    try:
+                        target_info = target.lstat()
+                    except OSError:
+                        raise
+                    if stat.S_ISDIR(target_info.st_mode):
+                        raise
+                    time.sleep(0.005)
+        except BaseException:
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
+            raise
+    except OSError as exc:
+        # Windows maps replacement of an existing directory to EACCES, which
+        # is also used for permission and sharing failures. Inspect the target
+        # after the failed replace and classify only an actual directory as a
+        # key/nested-key collision.
+        try:
+            target_info = target.lstat()
+        except OSError:
+            pass
+        else:
+            if stat.S_ISDIR(target_info.st_mode) and not _is_path_redirect(target_info):
+                raise _collision_error(key) from exc
+        if isinstance(exc, (IsADirectoryError, NotADirectoryError)):
+            raise _collision_error(key) from exc
+        raise FilesError(f"write failed for key {key!r}: {exc}") from exc
+
+
+def _read_local_path(key: str) -> bytes | None:
+    _validate_windows_local_path(key)
+    dirs, name = _split_key(key)
+    try:
+        parent = _descend_path(_local_base_path(create=False), dirs, create=False)
+    except (FileNotFoundError, NotADirectoryError):
+        return None
+    except OSError as exc:
+        raise FilesError(f"read failed for key {key!r}: {exc}") from exc
+    target = parent / name
+    try:
+        info = target.lstat()
+        if _is_path_redirect(info):
+            raise _ConfinementError("resolved path escapes the files directory.")
+        if stat.S_ISDIR(info.st_mode):
+            return None
+        with _open_local_path_for_read(target) as handle:
+            return handle.read()
+    except (FileNotFoundError, NotADirectoryError):
+        return None
+    except IsADirectoryError:
+        return None
+    except OSError as exc:
+        raise FilesError(f"read failed for key {key!r}: {exc}") from exc
+
+
+def _delete_local_path(key: str) -> None:
+    _validate_windows_local_path(key)
+    dirs, name = _split_key(key)
+    try:
+        parent = _descend_path(_local_base_path(create=False), dirs, create=False)
+    except (_ConfinementError, FileNotFoundError, NotADirectoryError):
+        return
+    target = parent / name
+    try:
+        info = target.lstat()
+        if _is_path_redirect(info) or stat.S_ISDIR(info.st_mode):
+            return
+    except (FileNotFoundError, NotADirectoryError):
+        return
+    except OSError as exc:
+        raise FilesError(f"delete failed for key {key!r}: {exc}") from exc
+    try:
+        target.unlink()
+    except (FileNotFoundError, NotADirectoryError):
+        return
+    except OSError as exc:
+        raise FilesError(f"delete failed for key {key!r}: {exc}") from exc
+
+
+def _list_local_path(prefix: str) -> list[str]:
+    _validate_windows_local_path(prefix)
+    try:
+        base = _local_base_path(create=False)
+    except FileNotFoundError:
+        return []
+    keys: list[str] = []
+
+    def _walk(directory: Path, rel_prefix: str) -> None:
+        with os.scandir(directory) as entries:
+            for entry in entries:
+                try:
+                    info = entry.stat(follow_symlinks=False)
+                except FileNotFoundError:
+                    continue
+                if _is_path_redirect(info):
+                    continue
+                rel = f"{rel_prefix}{entry.name}"
+                if stat.S_ISDIR(info.st_mode):
+                    _walk(Path(entry.path), f"{rel}/")
+                elif stat.S_ISREG(info.st_mode):
+                    if _WINDOWS_INTERNAL_TEMP_NAME.fullmatch(entry.name):
+                        continue
+                    if rel.startswith(prefix):
+                        keys.append(rel)
+
+    _walk(base, "")
+    keys.sort()
+    return keys
+
+
+def _write_local(key: str, data: bytes) -> None:
+    if _supports_dir_fd_backend():
+        _write_local_fd(key, data)
+    else:
+        _write_local_path(key, data)
+
+
+def _read_local(key: str) -> bytes | None:
+    if _supports_dir_fd_backend():
+        return _read_local_fd(key)
+    return _read_local_path(key)
+
+
+def _delete_local(key: str) -> None:
+    if _supports_dir_fd_backend():
+        _delete_local_fd(key)
+    else:
+        _delete_local_path(key)
+
+
+def _list_local(prefix: str) -> list[str]:
+    if _supports_dir_fd_backend():
+        return _list_local_fd(prefix)
+    return _list_local_path(prefix)
 
 
 # ---------------------------------------------------------------------------

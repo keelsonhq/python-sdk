@@ -63,6 +63,20 @@ def test_parse_identity_with_roles_and_groups() -> None:
     assert identity.attributes.groups == ["developers", "everyone", "reviewers"]
 
 
+def test_parse_identity_prefers_workspace_and_keeps_tenant_alias_in_sync() -> None:
+    payload = {
+        "user": {"id": "u-1"},
+        "workspace": {"id": "w-canonical", "role": "OWNER"},
+        "tenant": {"id": "w-legacy", "role": "APP_USER"},
+        "app": {"id": "a-1"},
+    }
+
+    identity = _parse_identity(payload)
+
+    assert identity.workspace.id == "w-canonical"
+    assert identity.workspace is identity.tenant
+
+
 def test_parse_identity_without_roles_and_groups() -> None:
     """Parse a legacy-compatible payload without roles or attributes."""
     payload = {
@@ -772,6 +786,24 @@ class TestDirectoryBaseUrl:
         monkeypatch.delenv("KEELSON_DIRECTORY_BASE_URL", raising=False)
         monkeypatch.setenv("KEELSON_IDENTITY_BASE_URL", "http://identity")
         assert _directory_base_url() == "http://identity"
+
+
+class TestUserAgentHeader:
+    """T-0595: urllib's default UA (Python-urllib/3.x) is blocked by Cloudflare
+    Browser Integrity Check (Error 1010) on the *.keelson.run zones, so every
+    outbound request must carry an explicit SDK User-Agent."""
+
+    def test_list_members_sends_sdk_user_agent(self) -> None:
+        captured, mock = _capture_request(_EMPTY_MEMBERS)
+        with mock:
+            list_members(base_url="http://test", app_token="keelson_xyz")
+        assert captured[0].get_header("User-agent") == "Keelson-Python-SDK/0.1.1"
+
+    def test_cookie_auth_also_sends_sdk_user_agent(self) -> None:
+        captured, mock = _capture_request(_EMPTY_MEMBERS)
+        with mock:
+            list_members(base_url="http://test", cookie="sid=1")
+        assert captured[0].get_header("User-agent") == "Keelson-Python-SDK/0.1.1"
 
 
 class TestAppTokenHeader:

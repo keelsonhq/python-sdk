@@ -178,10 +178,23 @@ Optional capability:
 
 - webhook server bootstrap helper
 
+Platform availability: the Keelson platform does not offer new email sending
+or inbound email at initial launch. Both capabilities remain implemented in all
+three SDKs and stay in this contract so they can be resumed. Delivery events
+for previously sent email continue through event webhook handling and webhook
+signature verification.
+
 Intentional differences:
 
 - callback, decorator, explicit verification helper, or HTTP-handler based
   integration are all acceptable shapes
+- all languages prefer `KEELSON_EMAIL_BASE_URL` and `/__keelson/email/*` when
+  the non-blank variable is available, while retaining the legacy API URL and
+  `/v1/email/*` paths otherwise. Python attachment instances and Go's
+  ID-based method select the gateway path directly. Node selects it only when
+  `downloadAttachment` receives attachment metadata; its existing URL-string
+  form always retains the legacy route. An explicit Go `New(baseURL, token)`
+  base URL also always retains legacy paths.
 
 ## Capability Matrix
 
@@ -235,10 +248,10 @@ capability is part of the parity contract.
 
 | Capability | Target | Node | Python | Go | Notes |
 | --- | --- | --- | --- | --- | --- |
-| Send | guaranteed | Yes | Yes | Yes | |
+| Send | guaranteed | Yes | Yes | Yes | Prefers app-scoped `KEELSON_EMAIL_BASE_URL`; blank/unset falls back to the legacy API URL |
 | Inbound handling | guaranteed | Yes | Yes | Yes | Go uses explicit verification in HTTP handlers |
 | Event handling | guaranteed | Yes | Yes | Yes | Go uses explicit verification in HTTP handlers |
-| Attachment download | guaranteed | Yes | Yes | Yes | Python exposes instance method on attachment |
+| Attachment download | guaranteed | Yes | Yes | Yes | Gateway paths are built from attachment IDs. Python exposes an instance method; Node retains its URL-string overload for compatibility |
 | Webhook signature verification | guaranteed | Yes | Yes | Yes | Svix HMAC-SHA256. Node/Python auto-verify with `KEELSON_EMAIL_WEBHOOK_SECRET` and, in Keelson mode (`KEELSON_MODE=keelson` / platform env), reject unsigned deliveries fail-closed; Go verifies explicitly in the HTTP handler |
 | Webhook server bootstrap helper | optional | Yes | Yes | No | Allowed helper difference |
 | Replayed / expired signature rejection | guaranteed | Yes | Yes | Yes | Svix timestamp window (±300s) + HMAC reject expired-timestamp replays and tampered payloads in all three SDKs |
@@ -268,8 +281,8 @@ missing or incomplete. Resolution is identical across Go/Node/Python:
 | `KEELSON_MODE` unset + Media env missing + no platform env | local (zero-config development) |
 | Any other non-empty `KEELSON_MODE` (unknown) | **error** (never resolves to local) |
 
-The platform signal is any of `KEELSON_APP_ID`, `KEELSON_TENANT_ID`, or
-`KEELSON_DEPLOY_ID`.
+The platform signal is any of `KEELSON_APP_ID`, `KEELSON_WORKSPACE_ID`, or
+`KEELSON_DEPLOY_ID`. The deprecated `KEELSON_TENANT_ID` alias remains accepted.
 
 Error type per language: Go returns an error wrapping `media.ErrConfig`
 from `New`; Node throws `MediaError`; Python raises `MediaError`. The
@@ -284,14 +297,15 @@ The `files` SDK uses the shared fail-closed `KEELSON_MODE` machinery:
 **`KEELSON_MODE` is the single mode signal** — the backend is never inferred
 from the presence of the remote env. Remote mode uses the platform-injected
 `KEELSON_FILES_BUCKET` / `KEELSON_FILES_PREFIX` plus the platform identity
-(`KEELSON_APP_ID` / `KEELSON_TENANT_ID`). It never silently falls back to
+(`KEELSON_APP_ID` / `KEELSON_WORKSPACE_ID`). The deprecated
+`KEELSON_TENANT_ID` alias remains accepted. It never silently falls back to
 ephemeral local storage on Keelson. Resolution is identical across Go/Node/Python:
 
 | Condition | Result |
 | --- | --- |
 | `KEELSON_MODE=keelson` + bucket + prefix + identity set | remote (GCS over ADC) |
 | `KEELSON_MODE=keelson` + bucket / prefix missing | **error** (capability unavailable) |
-| `KEELSON_MODE=keelson` + identity (`KEELSON_APP_ID`/`KEELSON_TENANT_ID`) missing | **error** (capability unavailable) |
+| `KEELSON_MODE=keelson` + identity (`KEELSON_APP_ID`/`KEELSON_WORKSPACE_ID`) missing | **error** (capability unavailable) |
 | Exactly one of bucket / prefix set (any mode) | **error** (incomplete remote config) |
 | `KEELSON_MODE=local` | local filesystem (`KEELSON_FILES_DIR`, default `./.keelson/files`) |
 | `KEELSON_MODE` unset + core identifier set | **error** (refuse silent fallback on platform) |
@@ -301,7 +315,8 @@ ephemeral local storage on Keelson. Resolution is identical across Go/Node/Pytho
 Unlike Media, the `files` SDK does **not** infer remote from the presence of the
 remote env when `KEELSON_MODE` is unset; the mode variable is the only signal.
 The platform signal is
-any of `KEELSON_APP_ID` / `KEELSON_TENANT_ID` / `KEELSON_DEPLOY_ID`. Remote auth
+any of `KEELSON_APP_ID` / `KEELSON_WORKSPACE_ID` / `KEELSON_DEPLOY_ID`; the
+deprecated `KEELSON_TENANT_ID` alias remains accepted. Remote auth
 is ADC over the GCE metadata server (no auth env is wired); an unavailable ADC
 token surfaces as an error at operation time. Error type per language: Go
 returns an error wrapping `files.ErrConfig` from `New`; Node throws `FilesError`;
@@ -329,17 +344,18 @@ the rename is always same-filesystem (no `EXDEV`, even if `KEELSON_FILES_DIR` is
 a mount point); temp files use a control-char prefix so they can never be a valid
 key and `list` never surfaces them.
 
-**Path confinement is TOCTOU-safe** in every SDK's default local backend (the
-one exception — Node's opt-in fallback — is called out in the table below).
+**Path confinement is TOCTOU-safe** where the runtime exposes the required
+descriptor-relative filesystem operations. Node's non-Linux local-development
+fallback is called out in the table below.
 Every operation descends the key's path
 component-by-component relative to a held directory descriptor (`openat` +
 `O_NOFOLLOW`) and opens / renames / unlinks the final element relative to that
 descriptor, so an ancestor directory swapped to a symlink — even concurrently,
 mid-operation — cannot redirect the operation outside the files dir. Go uses
-`os.Root`; Python uses `os.open(..., dir_fd=...)` / `os.rename(..., src_dir_fd,
-dst_dir_fd)` / `os.unlink(..., dir_fd=...)`; Node has no `dir_fd` parameter at
-all, so it emulates `openat` by re-opening a held directory descriptor through a
-**portal** path, `<portal>/<fd>/<name>`.
+`os.Root`; Python uses `dir_fd` on POSIX and a path-based local backend on
+Windows; Node has no `dir_fd` parameter at all, so Linux emulates `openat` by
+re-opening a held directory descriptor through a **portal** path,
+`<portal>/<fd>/<name>`.
 
 Node's portal selection (local dev only — production is always
 `KEELSON_MODE=keelson` / GCS on Linux):
@@ -348,23 +364,22 @@ Node's portal selection (local dev only — production is always
 |---|---|
 | Linux | `/proc/self/fd` portal, selected unconditionally and without probing — identical to the pre-cross-platform behaviour |
 | Other POSIX (macOS, \*BSD) with a working portal | same TOCTOU-safe portal backend; candidates (`/dev/fd`, `/proc/self/fd`) are **probed at runtime**, and a portal is accepted only after it demonstrates every operation the backend uses, including that `O_NOFOLLOW` through the portal rejects a symlink |
-| Other POSIX with no working portal | **fails closed** unless `KEELSON_FILES_ALLOW_BESTEFFORT_LOCAL=1` is set, which selects a path-based backend (per-component `lstat` + `O_NOFOLLOW`, plus a whole-path no-symlink open flag when one is observed to work) and prints a stderr warning. Check-then-act windows remain on `mkdir` / `rename` / `unlink`, so it is never selected silently |
-| Windows | **unsupported** for local mode, with no opt-in escape hatch (no `O_NOFOLLOW` ⇒ no defence to offer). Use WSL2 or a Linux devcontainer, or remote (GCS) |
+| Other POSIX with no working portal | Path-based local-development backend (per-component `lstat`, plus a whole-path no-symlink open flag when available). On macOS, `O_NOFOLLOW_ANY` is feature-detected and used without the mutually incompatible `O_NOFOLLOW` flag. Check-then-act windows remain whenever a checked path is resolved again because Node exposes no `dir_fd`. |
+| Windows | Path-based local-development backend. It rejects Windows path syntax and reserved filenames in keys, rejects observed symlinks and junctions, and confines resolved paths to `KEELSON_FILES_DIR`. Python also rejects other observed name-surrogate reparse points. Windows exposes no `O_NOFOLLOW`, so the same check-then-act limitation applies to read, write, delete, and list. |
 
 The portal mechanism is a Node-runtime workaround, not a contract difference:
-Python and Go express the same confinement natively (`dir_fd` / `os.Root`) and
-need no platform gate. Wherever a portal is selected — which is always the case
-on Linux, i.e. CI and every supported deployment — the TOCTOU guarantee is
+Python and Go express the same confinement natively on POSIX (`dir_fd` /
+`os.Root`). Python uses the same observed-symlink checks as Node on Windows.
+Wherever descriptor-relative operations are available, the TOCTOU guarantee is
 identical across all three SDKs.
 
-**The opted-in best-effort backend is explicitly outside that guarantee.** It
-enforces confinement by check-then-act (`lstat` per component, then `mkdir` /
-`rename` / `unlink`, which accept no `O_NOFOLLOW`), so an ancestor swapped to a
-symlink *between* the check and the act can escape the files dir. It rejects
-symlinks it can observe, but it does not provide the TOCTOU property; that is
-why it requires `KEELSON_FILES_ALLOW_BESTEFFORT_LOCAL=1` and warns on stderr.
-It is a local-development escape hatch for a platform where the SDK would
-otherwise refuse to run at all — never a production or CI configuration.
+**The path-based Node and Python backends are scoped to local development.**
+They enforce confinement by checking each component with `lstat`. Any later
+path-based open, directory traversal, rename, or unlink resolves the path
+again, so an ancestor swapped to a redirect between those steps can escape the
+files dir. They reject symlinks and Windows name-surrogate reparse points they
+can observe. Production uses the remote GCS backend and never reaches this code
+path.
 
 Under the default (portal) backend, a symlinked ancestor or key file is rejected as a confinement
 error, never followed out of the dir, and `list` never follows or lists

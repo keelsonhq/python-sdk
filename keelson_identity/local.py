@@ -3,13 +3,14 @@
 Set ``KEELSON_LOCAL_MODE=1`` to return fixture data without making HTTP calls.
 The current user can be customized with ``KEELSON_LOCAL_USER_ID``,
 ``KEELSON_LOCAL_USER_EMAIL``, ``KEELSON_LOCAL_USER_NAME``,
-``KEELSON_LOCAL_TENANT_ID``, ``KEELSON_LOCAL_TENANT_ROLE``, and
+``KEELSON_LOCAL_WORKSPACE_ID``, ``KEELSON_LOCAL_WORKSPACE_ROLE`` (with the
+legacy ``TENANT`` names as fallbacks), and
 ``KEELSON_LOCAL_APP_ID``.
 
 The configured current user is always included in member-directory results,
 even when its ID or email differs from the built-in companion users. This keeps
 ``get_current_user()`` and ``get_user()`` consistent in local mode. Member
-records include the tenant role, and group membership is derived from that role.
+records include the workspace role, and group membership is derived from that role.
 """
 
 from __future__ import annotations
@@ -23,8 +24,8 @@ from .client import (
     GroupItem,
     MemberItem,
     PaginatedMembers,
-    TenantIdentity,
     UserIdentity,
+    WorkspaceIdentity,
 )
 
 
@@ -50,11 +51,15 @@ def _local_user_name() -> str:
 
 
 def _local_tenant_id() -> str:
-    return _env("KEELSON_LOCAL_TENANT_ID", "local-tenant-001")
+    return os.environ.get("KEELSON_LOCAL_WORKSPACE_ID", "").strip() or _env(
+        "KEELSON_LOCAL_TENANT_ID", "local-tenant-001"
+    )
 
 
 def _local_tenant_role() -> str:
-    return _env("KEELSON_LOCAL_TENANT_ROLE", "OWNER")
+    return os.environ.get("KEELSON_LOCAL_WORKSPACE_ROLE", "").strip() or _env(
+        "KEELSON_LOCAL_TENANT_ROLE", "OWNER"
+    )
 
 
 def _local_app_id() -> str:
@@ -91,7 +96,7 @@ _FIXTURE_GROUPS: list[GroupItem] = [
     GroupItem(id="local-group-owners", key="owners", display_name="Owners", kind="SYSTEM", system_kind="owners"),
 ]
 
-# Maps each tenant role to the system groups it implies.
+# Maps each workspace role to the system groups it implies.
 _ROLE_GROUP_MAP: dict[str, list[str]] = {
     "OWNER": ["everyone", "developers", "admins", "owners"],
     "ADMIN": ["everyone", "developers", "admins"],
@@ -137,7 +142,7 @@ def local_get_current_user() -> UserIdentity:
 def local_get_current_identity() -> CurrentIdentity:
     """Return a deterministic full identity for local development.
 
-    The ``attributes.groups`` list is derived from the configured tenant role.
+    The ``attributes.groups`` list is derived from the configured workspace role.
     """
     role = _local_tenant_role()
     groups = _ROLE_GROUP_MAP.get(role, ["everyone"])
@@ -147,7 +152,7 @@ def local_get_current_identity() -> CurrentIdentity:
             email=_local_user_email(),
             name=_local_user_name(),
         ),
-        tenant=TenantIdentity(
+        workspace=WorkspaceIdentity(
             id=_local_tenant_id(),
             role=role,
         ),

@@ -9,6 +9,7 @@ exercised without network access.
 from __future__ import annotations
 
 import json
+from io import BytesIO
 from urllib.error import HTTPError
 from urllib.parse import parse_qs, unquote, urlparse
 
@@ -70,13 +71,16 @@ class FakeGcs:
             if self.bad_token_json:
                 return _FakeResponse(200, b"not-json")
             body = json.dumps(
-                {"access_token": f"tok-{self.token_fetches}", "expires_in": self.expires_in}
+                {
+                    "access_token": f"tok-{self.token_fetches}",
+                    "expires_in": self.expires_in,
+                }
             ).encode()
             return _FakeResponse(200, body)
 
         forced = self.force_status.get(method)
         if forced:
-            raise HTTPError(url, forced, "forced", {}, None)
+            raise HTTPError(url, forced, "forced", {}, BytesIO(b"forced"))
 
         path = parsed.path
         # Upload: POST /upload/storage/v1/b/<bucket>/o?uploadType=media&name=<enc>

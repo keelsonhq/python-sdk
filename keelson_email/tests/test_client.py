@@ -9,8 +9,10 @@ import json
 import os
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from io import BytesIO
 from threading import Thread
 from unittest.mock import patch
+from urllib.error import HTTPError
 
 import pytest
 
@@ -539,11 +541,26 @@ class TestWebhookSignatureFailClosed:
         assert codes == [500]
         fake._handle_receive.assert_not_called()
 
+    def test_workspace_env_no_secret_fails_closed(self, monkeypatch):
+        """The canonical workspace marker also enables fail-closed behavior."""
+        monkeypatch.delenv("KEELSON_MODE", raising=False)
+        monkeypatch.delenv("KEELSON_APP_ID", raising=False)
+        monkeypatch.setenv("KEELSON_WORKSPACE_ID", "workspace_123")
+        monkeypatch.delenv("KEELSON_TENANT_ID", raising=False)
+        monkeypatch.delenv("KEELSON_DEPLOY_ID", raising=False)
+        monkeypatch.delenv("KEELSON_EMAIL_WEBHOOK_SECRET", raising=False)
+        body = json.dumps({"delivery_id": "d1"}).encode("utf-8")
+        cls, fake, codes = self._fake(body=body, headers={})
+        cls.do_POST(fake)
+        assert codes == [500]
+        fake._handle_receive.assert_not_called()
+
     def test_local_mode_unsigned_accepted(self, monkeypatch):
         """Local mode permits unsigned deliveries when no secret is configured."""
         monkeypatch.setenv("KEELSON_MODE", "local")
         monkeypatch.delenv("KEELSON_EMAIL_WEBHOOK_SECRET", raising=False)
         monkeypatch.delenv("KEELSON_APP_ID", raising=False)
+        monkeypatch.delenv("KEELSON_WORKSPACE_ID", raising=False)
         monkeypatch.delenv("KEELSON_TENANT_ID", raising=False)
         monkeypatch.delenv("KEELSON_DEPLOY_ID", raising=False)
         body = json.dumps({"delivery_id": "d1"}).encode("utf-8")
@@ -718,6 +735,8 @@ class TestEmailEventPayloadParsing:
         "event_id": "evt_abc123",
         "event_type": "bounce",
         "email_address": "bounced@example.com",
+        "provider": "resend",
+        "send_id": "550e8400-e29b-41d4-a716-446655440000",
         "resend_email_id": "re_456",
         "bounce_type": "hard",
         "detail": "Mailbox not found",
@@ -729,6 +748,8 @@ class TestEmailEventPayloadParsing:
         assert event.event_id == "evt_abc123"
         assert event.event_type == "bounce"
         assert event.email_address == "bounced@example.com"
+        assert event.provider == "resend"
+        assert event.send_id == "550e8400-e29b-41d4-a716-446655440000"
         assert event.resend_email_id == "re_456"
         assert event.bounce_type == "hard"
         assert event.detail == "Mailbox not found"
@@ -742,6 +763,8 @@ class TestEmailEventPayloadParsing:
             "timestamp": "2026-04-01T12:00:00Z",
         }
         event = EmailEventPayload.from_webhook_payload(minimal)
+        assert event.provider is None
+        assert event.send_id is None
         assert event.resend_email_id is None
         assert event.bounce_type is None
         assert event.detail is None
@@ -1007,6 +1030,82 @@ class TestSendPayload:
             with pytest.raises(EmailError, match="KEELSON_EMAIL_API_URL"):
                 send(to=addr, subject="Hi", text="Body")
 
+    @pytest.mark.parametrize("gateway_url", [None, "", "   "])
+    def test_legacy_request_contract_is_unchanged(self, gateway_url):
+        env = {
+            "KEELSON_EMAIL_API_URL": "  http://legacy.test/  ",
+            "KEELSON_EMAIL_TOKEN": " token ",
+        }
+        if gateway_url is not None:
+            env["KEELSON_EMAIL_BASE_URL"] = gateway_url
+
+        response = patch("keelson_email.client.urlopen")
+        with patch.dict(os.environ, env, clear=True), response as mock_urlopen:
+            mock_urlopen.return_value.__enter__.return_value.read.return_value = (
+                b'{"send_id":"send_1","status":"queued"}'
+            )
+            result = send(
+                to="a@example.com",
+                subject="Subject",
+                text="Body",
+                timeout_sec=12.5,
+            )
+
+        assert result == {"send_id": "send_1", "status": "queued"}
+        request = mock_urlopen.call_args.args[0]
+        assert request.full_url == "http://legacy.test/v1/email/send"
+        assert request.method == "POST"
+        assert request.get_header("Authorization") == "Bearer token"
+        assert request.get_header("Content-type") == "application/json"
+        assert request.get_header("Accept") == "application/json"
+        # T-0595: urllib's default UA (Python-urllib/3.x) is blocked by
+        # Cloudflare BIC (Error 1010) on the *.keelson.run zones.
+        assert request.get_header("User-agent") == "Keelson-Python-SDK/0.1.1"
+        assert json.loads(request.data) == {
+            "to": ["a@example.com"],
+            "subject": "Subject",
+            "text": "Body",
+        }
+        assert mock_urlopen.call_args.kwargs == {"timeout": 12.5}
+
+    def test_gateway_request_uses_trimmed_base_url(self):
+        env = {
+            "KEELSON_EMAIL_BASE_URL": "  http://gateway.test///  ",
+            "KEELSON_EMAIL_API_URL": "http://legacy.invalid",
+            "KEELSON_EMAIL_TOKEN": "token",
+        }
+        with (
+            patch.dict(os.environ, env, clear=True),
+            patch("keelson_email.client.urlopen") as mock_urlopen,
+        ):
+            mock_urlopen.return_value.__enter__.return_value.read.return_value = (
+                b'{"send_id":"send_1","status":"queued"}'
+            )
+            send(to="a@example.com", subject="Subject", text="Body")
+
+        request = mock_urlopen.call_args.args[0]
+        assert request.full_url == "http://gateway.test/__keelson/email/send"
+        assert request.get_header("User-agent") == "Keelson-Python-SDK/0.1.1"
+
+    def test_legacy_error_contract_is_unchanged(self):
+        error = HTTPError(
+            "http://legacy.test/v1/email/send",
+            422,
+            "Unprocessable Entity",
+            {},
+            BytesIO(b'{"error":{"code":"INVALID","message":"bad request"}}'),
+        )
+        env = {
+            "KEELSON_EMAIL_API_URL": "http://legacy.test",
+            "KEELSON_EMAIL_TOKEN": "token",
+        }
+        with (
+            patch.dict(os.environ, env, clear=True),
+            patch("keelson_email.client.urlopen", side_effect=error),
+            pytest.raises(EmailError, match=r"^Send failed \[INVALID\]: bad request$"),
+        ):
+            send(to="a@example.com", subject="Subject", text="Body")
+
 
 # ---------------------------------------------------------------------------
 # Attachment.download (unit: URL construction)
@@ -1027,6 +1126,95 @@ class TestAttachmentDownload:
         with patch.dict(os.environ, {}, clear=True):
             with pytest.raises(EmailError, match="KEELSON_EMAIL_API_URL"):
                 att.download()
+
+    def test_legacy_download_uses_payload_url(self):
+        att = InboundAttachment(
+            id="att_new_id",
+            filename="f.pdf",
+            content_type="application/pdf",
+            size_bytes=100,
+            download_url="/v1/email/attachments/att_legacy_id",
+        )
+        env = {
+            "KEELSON_EMAIL_API_URL": "http://legacy.test/",
+            "KEELSON_EMAIL_TOKEN": "token",
+            "KEELSON_EMAIL_BASE_URL": "   ",
+        }
+        with (
+            patch.dict(os.environ, env, clear=True),
+            patch("keelson_email.client.urlopen") as mock_urlopen,
+        ):
+            mock_urlopen.return_value.__enter__.return_value.read.return_value = b"data"
+            assert att.download(timeout_sec=9.0) == b"data"
+
+        request = mock_urlopen.call_args.args[0]
+        assert request.full_url == (
+            "http://legacy.test/v1/email/attachments/att_legacy_id"
+        )
+        assert request.method == "GET"
+        assert request.get_header("Authorization") == "Bearer token"
+        assert request.get_header("Accept") == "application/octet-stream"
+        assert request.get_header("User-agent") == "Keelson-Python-SDK/0.1.1"
+        assert request.get_header("Content-type") is None
+        assert request.data is None
+        assert mock_urlopen.call_args.kwargs == {"timeout": 9.0}
+
+    def test_gateway_download_uses_id_and_ignores_payload_url(self):
+        att = InboundAttachment(
+            id="att_from_payload_id",
+            filename="f.pdf",
+            content_type="application/pdf",
+            size_bytes=100,
+            download_url="/v1/email/attachments/must-not-be-used",
+        )
+        env = {
+            "KEELSON_EMAIL_BASE_URL": " http://gateway.test/// ",
+            "KEELSON_EMAIL_API_URL": "http://legacy.invalid",
+            "KEELSON_EMAIL_TOKEN": "token",
+        }
+        with (
+            patch.dict(os.environ, env, clear=True),
+            patch("keelson_email.client.urlopen") as mock_urlopen,
+        ):
+            mock_urlopen.return_value.__enter__.return_value.read.return_value = b"data"
+            assert att.download() == b"data"
+
+        request = mock_urlopen.call_args.args[0]
+        assert request.full_url == (
+            "http://gateway.test/__keelson/email/attachments/att_from_payload_id"
+        )
+        assert "must-not-be-used" not in request.full_url
+        assert request.get_header("User-agent") == "Keelson-Python-SDK/0.1.1"
+
+    def test_legacy_download_error_contract_is_unchanged(self):
+        error = HTTPError(
+            "http://legacy.test/v1/email/attachments/att_1",
+            404,
+            "Not Found",
+            {},
+            BytesIO(b"attachment missing"),
+        )
+        att = InboundAttachment(
+            id="att_1",
+            filename="f.pdf",
+            content_type="application/pdf",
+            size_bytes=100,
+            download_url="/v1/email/attachments/att_1",
+        )
+        env = {
+            "KEELSON_EMAIL_API_URL": "http://legacy.test",
+            "KEELSON_EMAIL_TOKEN": "token",
+        }
+        with (
+            patch.dict(os.environ, env, clear=True),
+            patch("keelson_email.client.urlopen", side_effect=error),
+            pytest.raises(EmailError) as exc_info,
+        ):
+            att.download()
+
+        assert str(exc_info.value) == (
+            "Attachment download failed (404): attachment missing"
+        )
 
 
 # ---------------------------------------------------------------------------

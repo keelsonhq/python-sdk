@@ -14,7 +14,7 @@ from urllib.parse import quote
 from urllib.request import Request, urlopen
 
 _CROCKFORD_BASE32 = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
-_SDK_USER_AGENT = "Keelson-Python-SDK/0.1.0"
+_SDK_USER_AGENT = "Keelson-Python-SDK/0.1.1"
 
 
 class MediaError(RuntimeError):
@@ -75,6 +75,7 @@ def _mode() -> str:
 # Platform-owned identifiers whose presence means the app is running on Keelson.
 _CORE_IDENTIFIER_ENVS = (
     "KEELSON_APP_ID",
+    "KEELSON_WORKSPACE_ID",
     "KEELSON_TENANT_ID",
     "KEELSON_DEPLOY_ID",
 )
@@ -99,9 +100,10 @@ def _resolve_mode() -> str:
     - ``KEELSON_MODE=local`` always uses local filesystem storage.
     - When ``KEELSON_MODE`` is unset (local development), remote is used if
       both env values are present, otherwise local — unless a platform
-      environment is visible (any of ``KEELSON_APP_ID`` / ``KEELSON_TENANT_ID``
-      / ``KEELSON_DEPLOY_ID`` set), in which case the silent local fallback is
-      refused.
+      environment is visible (any of ``KEELSON_APP_ID`` /
+      ``KEELSON_WORKSPACE_ID`` / ``KEELSON_DEPLOY_ID`` set;
+      ``KEELSON_TENANT_ID`` remains a deprecated alias), in which case the
+      silent local fallback is refused.
     - Any other non-empty ``KEELSON_MODE`` is a misconfiguration and raises
       ``MediaError`` (an unknown mode never resolves to local).
     """
@@ -138,7 +140,8 @@ def _resolve_mode() -> str:
         if _is_platform_env():
             raise MediaError(
                 "Platform environment detected "
-                "(KEELSON_APP_ID / KEELSON_TENANT_ID / KEELSON_DEPLOY_ID set) but Media "
+                "(KEELSON_APP_ID / KEELSON_WORKSPACE_ID (or deprecated "
+                "KEELSON_TENANT_ID alias) / KEELSON_DEPLOY_ID set) but Media "
                 "is not configured; refusing to fall back to local storage. Set "
                 "KEELSON_MODE=local for local development."
             )

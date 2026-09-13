@@ -2,6 +2,8 @@
   "event_id": "evt_parity01",
   "event_type": "bounce",
   "email_address": "bounced@example.com",
+  "provider": "resend",
+  "send_id": "550e8400-e29b-41d4-a716-446655440000",
   "resend_email_id": "re_001",
   "bounce_type": "hard",
   "detail": "Mailbox not found",

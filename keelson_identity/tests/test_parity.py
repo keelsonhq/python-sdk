@@ -32,8 +32,9 @@ def test_parity_current_user() -> None:
     assert identity.user.email == "taro@example.com"
     assert identity.user.name == "Taro Yamada"
 
-    assert identity.tenant.id == "tenant_001"
-    assert identity.tenant.role == "admin"
+    assert identity.workspace.id == "workspace_001"
+    assert identity.workspace.role == "admin"
+    assert identity.workspace is identity.tenant
 
     assert identity.app.id == "app_xyz"
     assert identity.app.permissions == ["manage", "view"]

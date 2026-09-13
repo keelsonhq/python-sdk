@@ -29,8 +29,9 @@ API response from the current-user endpoint.
 | `user.id` | string | exact match |
 | `user.email` | string | exact match |
 | `user.name` | string | exact match |
-| `tenant.id` | string | exact match |
-| `tenant.role` | string | exact match |
+| `workspace.id` | string | exact match |
+| `workspace.role` | string | exact match |
+| `tenant` | object | deprecated compatibility alias; identical to `workspace` |
 | `app.id` | string | exact match |
 | `app.permissions` | string[] | exact match (order preserved) |
 | `app.roles` | string[] | exact match (order preserved) |
@@ -199,6 +200,8 @@ Email event webhook payload (bounce/complaint/delivery).
 | `event_id` | string | exact match |
 | `event_type` | string | exact match |
 | `email_address` | string | exact match |
+| `provider` | string \| null | exact match |
+| `send_id` | string \| null | exact match |
 | `resend_email_id` | string \| null | exact match |
 | `bounce_type` | string \| null | exact match |
 | `detail` | string \| null | exact match |

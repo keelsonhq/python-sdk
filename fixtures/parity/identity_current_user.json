@@ -4,8 +4,12 @@
     "email": "taro@example.com",
     "name": "Taro Yamada"
   },
+  "workspace": {
+    "id": "workspace_001",
+    "role": "admin"
+  },
   "tenant": {
-    "id": "tenant_001",
+    "id": "workspace_001",
     "role": "admin"
   },
   "app": {

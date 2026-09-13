@@ -130,6 +130,7 @@ class TestUrl:
         # test is independent of any ambient platform env.
         for key in (
             "KEELSON_APP_ID",
+            "KEELSON_WORKSPACE_ID",
             "KEELSON_TENANT_ID",
             "KEELSON_DEPLOY_ID",
             "KEELSON_INTERNAL_MEDIA_BASE_URL",
@@ -218,7 +219,10 @@ class TestKeelsonModeStat:
         assert len(captured_requests) == 1
         assert captured_requests[0].get_method() == "HEAD"
         assert "Bearer test-token" in captured_requests[0].get_header("Authorization")
-        assert captured_requests[0].get_header("User-agent") == "Keelson-Python-SDK/0.1.0"
+        assert (
+            captured_requests[0].get_header("User-agent")
+            == "Keelson-Python-SDK/0.1.1"
+        )
 
     def test_stat_keelson_strips_charset(self, monkeypatch) -> None:
         self._setup_keelson_env(monkeypatch)
@@ -279,7 +283,8 @@ _MSG_KEELSON_UNAVAILABLE = (
 )
 _MSG_REFUSE_FALLBACK = (
     "Platform environment detected "
-    "(KEELSON_APP_ID / KEELSON_TENANT_ID / KEELSON_DEPLOY_ID set) but Media "
+    "(KEELSON_APP_ID / KEELSON_WORKSPACE_ID (or deprecated KEELSON_TENANT_ID "
+    "alias) / KEELSON_DEPLOY_ID set) but Media "
     "is not configured; refusing to fall back to local storage. Set "
     "KEELSON_MODE=local for local development."
 )
@@ -301,6 +306,7 @@ class TestModeContract:
         for key in (
             "KEELSON_MODE",
             "KEELSON_APP_ID",
+            "KEELSON_WORKSPACE_ID",
             "KEELSON_TENANT_ID",
             "KEELSON_DEPLOY_ID",
             "KEELSON_INTERNAL_MEDIA_BASE_URL",
@@ -364,7 +370,13 @@ class TestModeContract:
         assert _resolve_mode() == "local"
 
     @pytest.mark.parametrize(
-        "env_key", ["KEELSON_APP_ID", "KEELSON_TENANT_ID", "KEELSON_DEPLOY_ID"]
+        "env_key",
+        [
+            "KEELSON_APP_ID",
+            "KEELSON_WORKSPACE_ID",
+            "KEELSON_TENANT_ID",
+            "KEELSON_DEPLOY_ID",
+        ],
     )
     def test_platform_env_visible_refuses_local_fallback(self, monkeypatch, env_key) -> None:
         from keelson_media.client import _resolve_mode

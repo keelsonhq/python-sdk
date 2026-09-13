@@ -90,6 +90,21 @@ class TestLocalGetCurrentIdentity:
         assert identity.user.name == "Local Developer"
         assert identity.tenant.id == "local-tenant-001"
         assert identity.tenant.role == "OWNER"
+        assert identity.workspace is identity.tenant
+
+    def test_workspace_env_takes_precedence_over_tenant_alias(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("KEELSON_LOCAL_WORKSPACE_ID", "workspace-id")
+        monkeypatch.setenv("KEELSON_LOCAL_TENANT_ID", "tenant-id")
+        monkeypatch.setenv("KEELSON_LOCAL_WORKSPACE_ROLE", "OWNER")
+        monkeypatch.setenv("KEELSON_LOCAL_TENANT_ROLE", "BUILDER")
+
+        identity = local_get_current_identity()
+
+        assert identity.workspace.id == "workspace-id"
+        assert identity.workspace.role == "OWNER"
+        assert identity.workspace is identity.tenant
         assert identity.app.id == "local-app-001"
         assert identity.app.permissions == ["manage", "view"]
         assert identity.attributes is not None
@@ -103,6 +118,7 @@ class TestLocalGetCurrentIdentity:
         assert identity.user.id == "custom-u"
         assert identity.user.email == "custom@test"
         assert identity.tenant.role == "BUILDER"
+        assert identity.workspace is identity.tenant
 
     def test_groups_reflect_role_owner(self) -> None:
         """OWNER gets all four system groups."""

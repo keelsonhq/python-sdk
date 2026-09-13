@@ -1,6 +1,6 @@
 # Keelson Python SDK
 
-Python SDK for building apps on the Keelson platform. Provides four modules:
+Python SDK for building apps on the Keelson platform. Provides three modules:
 
 > **Note**: This repository is a read-only release mirror. Development happens in the private Keelson monorepo; issues are welcome here, but pull requests are not accepted — changes land through the next release.
 
@@ -9,7 +9,6 @@ Python SDK for building apps on the Keelson platform. Provides four modules:
 | `keelson_media` | `from keelson import media` | Media storage (upload, serve by ID) |
 | `keelson_files` | `from keelson import files` | Data files (key-addressed, overwrite, private) |
 | `keelson_identity` | `from keelson import identity` | User identity and directory |
-| `keelson_email` | `from keelson import email` | Inbound/outbound email |
 
 Cross-language parity across Node, Python, and Go is defined in
 [`./PARITY.md`](./PARITY.md). APIs below are labelled as
@@ -90,7 +89,7 @@ media.delete(file_id)
 | any | Exactly one of base URL / token set | **`MediaError`** — incomplete remote config |
 | `local` | — | Local filesystem (`MEDIA_DIR`, default `./media`) |
 | unset | Both Media env set | Remote (backward compatibility) |
-| unset | No Media env, platform core env visible (`KEELSON_APP_ID` / `KEELSON_TENANT_ID` / `KEELSON_DEPLOY_ID`) | **`MediaError`** — refuses silent local fallback |
+| unset | No Media env, platform core env visible (`KEELSON_APP_ID` / `KEELSON_WORKSPACE_ID` / `KEELSON_DEPLOY_ID`) | **`MediaError`** — refuses silent local fallback |
 | unset | No Media env, no platform env | Local filesystem (local development) |
 
 The SDK never silently falls back to ephemeral local storage on Keelson: set
@@ -157,10 +156,10 @@ full contract.
 
 ## Identity SDK (`keelson_identity`)
 
-User identity and tenant directory lookup. In production, the Keelson auth
+User identity and workspace directory lookup. In production, the Keelson auth
 gateway injects trusted `X-Keelson-User-*` headers before requests reach the app.
 Use `get_current_user` when the basic user profile is enough; use
-`get_current_identity` when the app needs tenant role, app permissions, app
+`get_current_identity` when the app needs workspace role, app permissions, app
 roles, or group attributes.
 
 ```python
@@ -181,7 +180,7 @@ identity = get_current_identity(
     headers=request.headers,
     app_token=os.environ["KEELSON_DIRECTORY_TOKEN"],
 )
-print(identity.tenant.role)
+print(identity.workspace.role)
 print(identity.app.permissions)   # ["manage", "view"]
 if identity.attributes:
     print(identity.attributes.groups)  # ["developers", "everyone"]
@@ -204,9 +203,9 @@ groups = list_groups(app_token=os.environ["KEELSON_DIRECTORY_TOKEN"])
 |----------|-----------|-------------|
 | `get_current_user` | `(headers=...) -> UserIdentity` | Parse the current user's basic profile from trusted `X-Keelson-User-*` headers; no network call |
 | `get_current_identity` | `(headers=..., app_token=...) -> CurrentIdentity` | Fetch the current user's full identity as the app actor |
-| `list_members` | `(*, base_url=None, cookie=None, authorization=None, app_token=None, **filters) -> PaginatedMembers` | List tenant members |
+| `list_members` | `(*, base_url=None, cookie=None, authorization=None, app_token=None, **filters) -> PaginatedMembers` | List workspace members |
 | `get_user` | `(user_id, *, base_url=None, cookie=None, authorization=None, app_token=None) -> MemberItem` | Get user by ID |
-| `list_groups` | `(*, base_url=None, cookie=None, authorization=None, app_token=None) -> list[GroupItem]` | List tenant groups |
+| `list_groups` | `(*, base_url=None, cookie=None, authorization=None, app_token=None) -> list[GroupItem]` | List workspace groups |
 
 `get_current_user` and `get_current_identity` accept common request header
 mappings. The required header is `x-keelson-user-id`; `x-keelson-user-email`
@@ -221,9 +220,14 @@ Directory functions also support app-as-actor access with `app_token` or the
 |----------|-----------|-------------|
 | `is_local_mode` | `() -> bool` | Check if running in local mode |
 
-**Data classes**: `CurrentIdentity`, `UserIdentity`, `TenantIdentity`, `AppIdentity`, `AttributesIdentity`, `MemberItem`, `PaginatedMembers`, `GroupItem`.
+**Data classes**: `CurrentIdentity`, `UserIdentity`, `WorkspaceIdentity`, `AppIdentity`, `AttributesIdentity`, `MemberItem`, `PaginatedMembers`, `GroupItem`.
 
 **Exception**: `IdentityError`.
+
+The former `TenantIdentity` class, `identity.tenant` attribute, `tenant` wire key,
+`KEELSON_TENANT_ID`, and `KEELSON_LOCAL_TENANT_ID` /
+`KEELSON_LOCAL_TENANT_ROLE` remain deprecated aliases through at least the next
+major SDK version.
 
 ### Filtering members by group
 
@@ -242,7 +246,7 @@ kept nullable for backward compatibility, but the server always populates it;
 ### `attributes.groups` vs `list_groups()`
 
 - **`attributes.groups`** (from `get_current_identity()`): the group keys the *current user* belongs to, **scoped to the current app** — the system groups the caller holds by role (a subset of `owners`/`admins`/`developers`/`everyone`, not all four: an OWNER gets `owners`/`developers`/`everyone`, an app user gets only `everyone`; exposed regardless of app binding) plus custom groups bound to this app (via a view/manage permission binding or an app-role binding). Custom groups not bound to the app are excluded, and a system group the caller does not hold never appears. Keys are stable and immutable, so they are safe for authorization checks; bind a group to the app if you need to branch on it.
-- **`list_groups()`**: all groups in the *tenant* (each with its stable `id` and `key`). Use for building UI pickers and admin views.
+- **`list_groups()`**: all groups in the *workspace* (each with its stable `id` and `key`). Use for building UI pickers and admin views.
 
 ### Modes
 
@@ -256,83 +260,11 @@ kept nullable for backward compatibility, but the server always populates it;
 | Variable | Description |
 |----------|-------------|
 | `KEELSON_LOCAL_MODE` | Set to `1` to enable local mode (returns fixture data, no HTTP calls). |
+| `KEELSON_LOCAL_WORKSPACE_ID` | Override the local workspace ID. |
+| `KEELSON_LOCAL_WORKSPACE_ROLE` | Override the local workspace role. |
 | `KEELSON_DIRECTORY_BASE_URL` | **Canonical, platform-injected** base URL for `get_current_identity` and Directory calls. Use this. |
 | `KEELSON_DIRECTORY_TOKEN` | App token for app-as-actor identity and Directory access. |
 | `KEELSON_IDENTITY_BASE_URL` | Deprecated compatibility alias used only when neither `base_url` nor `KEELSON_DIRECTORY_BASE_URL` is set. |
-
----
-
-## Email SDK (`keelson_email`)
-
-Inbound/outbound email.
-
-```python
-from keelson import email
-
-# Send
-email.send(
-    to="user@example.com",
-    subject="Hello",
-    text="Plain text body",
-    html="<p>HTML body</p>",
-)
-
-# Receive inbound emails via decorator
-@email.on_receive
-def handle(msg: email.InboundMessage):
-    print(msg.subject, msg.text)
-    email.send(
-        to=msg.reply_to or msg.from_,
-        subject=f"Re: {msg.subject}",
-        text="Got it!",
-        in_reply_to=msg.provider_message_id,
-    )
-
-# Handle bounce/complaint events
-@email.on_event
-def handle_event(event: email.EmailEventPayload):
-    if event.event_type == "bounce":
-        print("Bounced:", event.email_address)
-```
-
-### Cross-language guaranteed API
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `send` | `(to, subject, text=None, html=None, **kwargs)` | Send an email |
-| `verify_webhook` | `(body, headers, secret) -> InboundMessage` | Verify Svix signature and parse inbound email |
-| `verify_webhook_bytes` | `(body, headers, secret) -> InboundMessage` | Verify inbound email from raw bytes |
-| `verify_event_webhook` | `(body, headers, secret) -> EmailEventPayload` | Verify Svix signature and parse event |
-| `verify_event_webhook_bytes` | `(body, headers, secret) -> EmailEventPayload` | Verify event from raw bytes |
-
-Attachment download is also guaranteed; in Python it is an instance method on `InboundAttachment`:
-
-```python
-for att in msg.attachments:
-    data = att.download()  # -> bytes
-```
-
-### Python-specific helpers
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `on_receive` | `(handler)` | Decorator to handle inbound email (auto-starts webhook server) |
-| `on_event` | `(handler)` | Decorator to handle bounce/complaint/delivery events |
-| `serve` | `(**kwargs)` | Start webhook server manually |
-
-When `KEELSON_EMAIL_WEBHOOK_SECRET` is set, `serve()` and the decorators automatically verify inbound webhooks.
-
-**Data classes**: `Address`, `Attachment`, `InboundMessage`, `InboundAttachment`, `EmailEventPayload`, `SpamAssessment`, `AuthenticationResult`.
-
-**Exception**: `EmailError`.
-
-### Environment variables
-
-| Variable | Description |
-|----------|-------------|
-| `KEELSON_EMAIL_API_URL` | Email API endpoint (required). |
-| `KEELSON_EMAIL_TOKEN` | Bearer token (required). |
-| `KEELSON_EMAIL_WEBHOOK_SECRET` | Optional Svix signing secret for auto-verification. |
 
 ---
 
@@ -356,7 +288,6 @@ Run tests for individual modules:
 ```bash
 uv run pytest keelson_media/tests/
 uv run pytest keelson_identity/tests/
-uv run pytest keelson_email/tests/
 ```
 
 Lint:

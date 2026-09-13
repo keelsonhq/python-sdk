@@ -99,6 +99,8 @@ def test_parity_email_event() -> None:
     assert evt.event_id == "evt_parity01"
     assert evt.event_type == "bounce"
     assert evt.email_address == "bounced@example.com"
+    assert evt.provider == "resend"
+    assert evt.send_id == "550e8400-e29b-41d4-a716-446655440000"
     assert evt.resend_email_id == "re_001"
     assert evt.bounce_type == "hard"
     assert evt.detail == "Mailbox not found"

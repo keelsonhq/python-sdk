@@ -10,6 +10,12 @@ from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
 
 
+# Explicit UA: urllib's default ``Python-urllib/3.x`` is blocked by Cloudflare
+# Browser Integrity Check (Error 1010 browser_signature_banned) on the
+# ``*.keelson.run`` / ``*.keelson-stage.run`` zones. See T-0595.
+_SDK_USER_AGENT = "Keelson-Python-SDK/0.1.1"
+
+
 class IdentityError(RuntimeError):
     pass
 
@@ -22,9 +28,13 @@ class UserIdentity:
 
 
 @dataclass(frozen=True)
-class TenantIdentity:
+class WorkspaceIdentity:
     id: str
     role: str
+
+
+# Deprecated: use WorkspaceIdentity. Kept through at least the next major version.
+TenantIdentity = WorkspaceIdentity
 
 
 @dataclass(frozen=True)
@@ -70,12 +80,35 @@ class PaginatedMembers:
     next_offset: int | None = None
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, init=False)
 class CurrentIdentity:
     user: UserIdentity
-    tenant: TenantIdentity
+    workspace: WorkspaceIdentity
     app: AppIdentity
     attributes: AttributesIdentity | None = None
+    # Deprecated: use workspace. Retained through at least the next major version.
+    tenant: WorkspaceIdentity
+
+    def __init__(
+        self,
+        user: UserIdentity,
+        workspace: WorkspaceIdentity | None = None,
+        app: AppIdentity | None = None,
+        attributes: AttributesIdentity | None = None,
+        *,
+        tenant: WorkspaceIdentity | None = None,
+    ) -> None:
+        """Build an identity while retaining ``tenant`` as a deprecated alias."""
+        selected = workspace if workspace is not None else tenant
+        if selected is None:
+            raise TypeError("CurrentIdentity requires workspace (or deprecated tenant)")
+        if app is None:
+            raise TypeError("CurrentIdentity requires app")
+        object.__setattr__(self, "user", user)
+        object.__setattr__(self, "workspace", selected)
+        object.__setattr__(self, "tenant", selected)
+        object.__setattr__(self, "app", app)
+        object.__setattr__(self, "attributes", attributes)
 
 
 # App tokens used for app-as-actor Directory access are read from this env
@@ -114,25 +147,26 @@ def _decode_json(raw: str) -> dict[str, Any]:
 
 def _parse_identity(payload: dict[str, Any]) -> CurrentIdentity:
     user_raw = payload.get("user")
-    tenant_raw = payload.get("tenant")
+    workspace_key = "workspace" if "workspace" in payload else "tenant"
+    workspace_raw = payload.get(workspace_key)
     app_raw = payload.get("app")
     if not isinstance(user_raw, dict):
         raise IdentityError("Identity response is missing 'user'.")
-    if not isinstance(tenant_raw, dict):
-        raise IdentityError("Identity response is missing 'tenant'.")
+    if not isinstance(workspace_raw, dict):
+        raise IdentityError("Identity response is missing 'workspace'.")
     if not isinstance(app_raw, dict):
         raise IdentityError("Identity response is missing 'app'.")
 
     user_id = str(user_raw.get("id") or "").strip()
-    tenant_id = str(tenant_raw.get("id") or "").strip()
-    tenant_role = str(tenant_raw.get("role") or "").strip()
+    workspace_id = str(workspace_raw.get("id") or "").strip()
+    workspace_role = str(workspace_raw.get("role") or "").strip()
     app_id = str(app_raw.get("id") or "").strip()
     if not user_id:
         raise IdentityError("Identity response is missing user.id.")
-    if not tenant_id:
-        raise IdentityError("Identity response is missing tenant.id.")
-    if not tenant_role:
-        raise IdentityError("Identity response is missing tenant.role.")
+    if not workspace_id:
+        raise IdentityError(f"Identity response is missing {workspace_key}.id.")
+    if not workspace_role:
+        raise IdentityError(f"Identity response is missing {workspace_key}.role.")
     if not app_id:
         raise IdentityError("Identity response is missing app.id.")
 
@@ -166,7 +200,7 @@ def _parse_identity(payload: dict[str, Any]) -> CurrentIdentity:
 
     return CurrentIdentity(
         user=UserIdentity(id=user_id, email=email, name=name),
-        tenant=TenantIdentity(id=tenant_id, role=tenant_role),
+        workspace=WorkspaceIdentity(id=workspace_id, role=workspace_role),
         app=AppIdentity(id=app_id, permissions=app_permissions, roles=app_roles),
         attributes=attributes_identity,
     )
@@ -283,7 +317,10 @@ def _build_headers(
     authorization: str | None = None,
     host: str | None = None,
 ) -> dict[str, str]:
-    headers: dict[str, str] = {"Accept": "application/json"}
+    headers: dict[str, str] = {
+        "Accept": "application/json",
+        "User-Agent": _SDK_USER_AGENT,
+    }
     if cookie:
         headers["Cookie"] = cookie.strip()
     if authorization:
@@ -444,7 +481,7 @@ def list_members(
     group_key: str | None = None,
     group_id: str | None = None,
 ) -> PaginatedMembers:
-    """List tenant members.
+    """List workspace members.
 
     ``group_key`` and ``group_id`` both narrow results to a single group.
     Prefer ``group_key`` for code references: every group has a key, and keys
