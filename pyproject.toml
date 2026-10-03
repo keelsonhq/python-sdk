@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "keelson-sdk"
-version = "0.1.1"
+version = "0.2.0"
 description = "Keelson Python SDK"
 readme = "README.md"
 license = "MIT"
@@ -25,7 +25,7 @@ Homepage = "https://keelson.dev"
 Repository = "https://github.com/keelsonhq/python-sdk"
 
 [tool.setuptools]
-packages = ["keelson", "keelson_media", "keelson_files", "keelson_identity", "keelson_email"]
+packages = ["keelson", "keelson_media", "keelson_files", "keelson_identity", "keelson_email", "keelson_tasks"]
 
 [dependency-groups]
 dev = [
@@ -42,4 +42,5 @@ testpaths = [
     "keelson_email/tests",
     "keelson_media/tests",
     "keelson_files/tests",
+    "keelson_tasks/tests",
 ]

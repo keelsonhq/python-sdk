@@ -218,7 +218,9 @@ def local_list_members(
     page = filtered[effective_offset:effective_offset + effective_limit]
     has_next = len(filtered) > effective_offset + effective_limit
     items = [
-        MemberItem(id=m["id"], email=m["email"], name=m["name"], role=m["role"])
+        MemberItem(
+            id=m["id"], email=m["email"], name=m["name"], role=m["role"], image_url=None
+        )
         for m in page
     ]
     return PaginatedMembers(
@@ -238,7 +240,9 @@ def local_get_user(user_id: str) -> MemberItem:
 
     for m in _build_members():
         if m["id"] == user_id:
-            return MemberItem(id=m["id"], email=m["email"], name=m["name"], role=m["role"])
+            return MemberItem(
+                id=m["id"], email=m["email"], name=m["name"], role=m["role"], image_url=None
+            )
     raise IdentityError(f"Identity API returned 404 (not found). user_id={user_id}")
 
 

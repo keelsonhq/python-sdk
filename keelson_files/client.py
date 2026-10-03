@@ -40,7 +40,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
 
-_SDK_USER_AGENT = "Keelson-Python-SDK/0.1.1"
+_SDK_USER_AGENT = "Keelson-Python-SDK/0.2.0"
 
 # HTTP request timeout (seconds) for GCS / metadata-server calls. Matches the
 # media SDK's 30s.

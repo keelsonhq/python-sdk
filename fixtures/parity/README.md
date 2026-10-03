@@ -54,6 +54,7 @@ Paginated member list response.
 | `items[].email` | string | exact match |
 | `items[].name` | string | exact match |
 | `items[].role` | string | exact match (empty string = no role) |
+| `items[].image_url` | string \| null \| absent | exact match; `null` and an absent key both parse to null (no image). The three items cover URL / `null` / absent |
 | `limit` | int | exact match |
 | `offset` | int | exact match |
 | `next_offset` | int \| null | exact match |
@@ -217,6 +218,80 @@ takes precedence over the legacy tenant identifier when both are present.
 | `cases[].workspace_id` | string \| null | value of `KEELSON_WORKSPACE_ID` |
 | `cases[].tenant_id` | string \| null | value of legacy `KEELSON_TENANT_ID` |
 | `cases[].expected` | string \| null | resolved workspace identifier; `null` means the SDK returns an empty string |
+
+### `tasks_mode_resolution.json`
+
+`KEELSON_MODE` resolution for the `tasks` SDK (PARITY.md, Tasks Runtime-Mode
+Contract). Each case sets exactly `env` (every other variable in `env_vars` is
+unset) and resolves the mode the way `enqueue` / `get` do (Go: `tasks.New()`).
+
+| Field | Type | Parity assertion |
+| --- | --- | --- |
+| `env_vars[]` | string | the variables every test clears before applying `cases[].env` |
+| `cases[].env` | object | the environment for the case |
+| `cases[].expected.mode` | `remote` \| `local` | the resolved backend |
+| `cases[].expected.audience` | string | remote only: the id-token audience (the `KEELSON_TASKS_BASE_URL` value, whitespace-trimmed; a trailing `/` is kept) |
+| `cases[].expected.api_base` | string | remote only: the URL `/internal/apps/...` is appended to (trailing `/` removed) |
+| `cases[].expected.app_id` | string | remote only: the `{app_id}` path segment |
+| `cases[].expected.error_code` | string | a configuration error (always `TASKS_NOT_CONFIGURED`; Go wraps `tasks.ErrConfig`) |
+
+Covers the platform signal (including the `KEELSON_TENANT_ID` alias), a missing
+`KEELSON_APP_ID` after remote mode is selected, case-insensitive `KEELSON_MODE`,
+and unknown modes never resolving to local.
+
+### `tasks_error_mapping.json`
+
+Error classification of a runtime API call. Every SDK raises/returns its single
+error type (`TasksError` / `*tasks.Error`) with the expected `code` and
+`status`, in the fixed order 401 → 403 → error envelope → 502/503/504 → other
+5xx → other (PARITY.md, Tasks SDK Error Codes).
+
+| Field | Type | Parity assertion |
+| --- | --- | --- |
+| `http[].status` | int | the non-success HTTP status the fake server returns |
+| `http[].body` | string | the raw response body (JSON envelope, HTML, empty, malformed) |
+| `http[].expected.code` | string | the error `code` |
+| `http[].expected.status` | int | the error `status` |
+| `http[].expected.transient` | bool | `true` only for `TASKS_UNAVAILABLE_TRANSIENT`, the one class the SDK retries |
+| `transport[].failure` | `connection_error` \| `timeout` | a failure with no HTTP response |
+| `transport[].expected.code` / `.transient` | string / bool | `TASKS_UNAVAILABLE_TRANSIENT`, retried; `status` is `None` / `null` / `0` |
+
+Includes 503 + `TASKS_UNAVAILABLE` (passed through, not retried) and a redirect
+(not followed, `TASKS_HTTP_ERROR`).
+
+### `tasks_get_response.json`
+
+Success-response parsing (`app-platform-api-spec.md` § 9.2 / § 9.3).
+
+| Field | Type | Parity assertion |
+| --- | --- | --- |
+| `get[].body` | string | a raw 200 body of `GET .../tasks/{task_id}` |
+| `get[].expected.status` | object | the seven status fields; Go compares timestamps as the same instant |
+| `enqueue[].status` / `.body` | int / string | a raw 202 / 200 body of `POST .../enqueue` |
+| `enqueue[].expected.task_id` | string | the returned `task_id` |
+| `get[].expected.error_code` / `enqueue[].expected.error_code` | string | `TASKS_UNEXPECTED_RESPONSE` for a malformed body |
+
+Unknown fields are ignored and a `status` outside the five known values is
+returned unchanged; a non-object body, an empty or non-string identifier, a
+non-integer or negative `claimed_attempts`, or a non-RFC 3339 timestamp is
+rejected.
+
+### `tasks_local_cli_result.json`
+
+The local-mode contract between the SDKs and
+`keelson dev task run <name> --payload - --json`. The CLI test pins its real
+output to the key sets; the SDK tests use each case as a fake CLI's stdout.
+
+| Field | Type | Parity assertion |
+| --- | --- | --- |
+| `argv[]` | string | the CLI arguments every SDK passes (`<name>` is the task name) |
+| `task_keys[]` | string | the exact key set of the CLI's `{"task": {...}}` object |
+| `error_keys[]` | string | keys the CLI's `{"error": {...}}` object carries (the SDK reads only `code`) |
+| `cases[].stdout` / `cases[].stdout_text` | JSON / string | what the fake CLI prints (compact JSON, or raw text) |
+| `cases[].sdk.task_id` / `.status` | string / object | `enqueue` returns this `task_id`; `get` then returns the seven production fields (`exit_code` / `timed_out` dropped) |
+| `cases[].sdk.error_code` | string | the code `enqueue` raises/returns (`TASK_*` passed through, otherwise `TASKS_LOCAL_CLI_FAILED`) |
+
+The SDK decides from stdout alone, never from the CLI's exit code.
 
 ## Adding a new fixture
 

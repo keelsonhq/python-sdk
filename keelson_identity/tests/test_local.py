@@ -312,11 +312,13 @@ class TestLocalModeIntegration:
         monkeypatch.setenv("KEELSON_LOCAL_MODE", "1")
         result = list_members()
         assert len(result.items) == 4
+        assert all(m.image_url is None for m in result.items)
 
     def test_get_user_uses_local(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("KEELSON_LOCAL_MODE", "1")
         member = get_user("local-user-001")
         assert member.email == "dev@localhost"
+        assert member.image_url is None
 
     def test_list_groups_uses_local(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("KEELSON_LOCAL_MODE", "1")

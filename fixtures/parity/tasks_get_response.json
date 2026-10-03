@@ -1,0 +1,90 @@
+{
+  "description": "Tasks SDK success-response parsing (app-platform-api-spec § 9.2 / § 9.3; T-1037 design 2). `get` cases are 200 bodies of GET /internal/apps/{app_id}/tasks/{task_id}; `enqueue` cases are 202/200 bodies of POST .../enqueue. `body` is the raw response text. A valid case has `expected.status` (the seven get fields; Go parses the timestamps into time.Time and must compare the same instant) or `expected.task_id`; an invalid one has `expected.error_code` = TASKS_UNEXPECTED_RESPONSE. Rules: the body must be a JSON object; unknown fields are ignored; task_id / name / status must be non-empty strings; claimed_attempts must be an integer >= 0 (JSON booleans and non-integral numbers are rejected); created_at must be an RFC 3339 string with an uppercase `T` and a `Z` or ±hh:mm offset; last_failure_code must be null or a string; finished_at must be null or an RFC 3339 string. A `status` outside the five known values is returned unchanged.",
+  "get": [
+    {
+      "name": "failed_with_attempts",
+      "body": "{\"task_id\":\"0b9f3f8e-5c1d-4a7b-9e2f-1d2c3b4a5f60\",\"name\":\"generate-pdf\",\"status\":\"failed\",\"claimed_attempts\":3,\"last_failure_code\":\"exit_nonzero\",\"created_at\":\"2026-10-02T03:04:05Z\",\"finished_at\":\"2026-10-02T03:06:41Z\"}",
+      "expected": {
+        "status": {
+          "task_id": "0b9f3f8e-5c1d-4a7b-9e2f-1d2c3b4a5f60",
+          "name": "generate-pdf",
+          "status": "failed",
+          "claimed_attempts": 3,
+          "last_failure_code": "exit_nonzero",
+          "created_at": "2026-10-02T03:04:05Z",
+          "finished_at": "2026-10-02T03:06:41Z"
+        }
+      }
+    },
+    {
+      "name": "queued_with_nulls",
+      "body": "{\"task_id\":\"t-1\",\"name\":\"generate-pdf\",\"status\":\"queued\",\"claimed_attempts\":0,\"last_failure_code\":null,\"created_at\":\"2026-10-02T03:04:05.123456Z\",\"finished_at\":null}",
+      "expected": {
+        "status": {
+          "task_id": "t-1",
+          "name": "generate-pdf",
+          "status": "queued",
+          "claimed_attempts": 0,
+          "last_failure_code": null,
+          "created_at": "2026-10-02T03:04:05.123456Z",
+          "finished_at": null
+        }
+      }
+    },
+    {
+      "name": "running_after_a_failed_attempt_with_offset_timestamp",
+      "body": "{\"task_id\":\"t-2\",\"name\":\"send-mail\",\"status\":\"running\",\"claimed_attempts\":2,\"last_failure_code\":\"timed_out\",\"created_at\":\"2026-10-02T12:04:05+09:00\",\"finished_at\":null}",
+      "expected": {
+        "status": {
+          "task_id": "t-2",
+          "name": "send-mail",
+          "status": "running",
+          "claimed_attempts": 2,
+          "last_failure_code": "timed_out",
+          "created_at": "2026-10-02T12:04:05+09:00",
+          "finished_at": null
+        }
+      }
+    },
+    {
+      "name": "unknown_status_and_extra_fields_pass_through",
+      "body": "{\"task_id\":\"t-3\",\"name\":\"generate-pdf\",\"status\":\"paused\",\"claimed_attempts\":1,\"last_failure_code\":\"something_new\",\"created_at\":\"2026-10-02T03:04:05Z\",\"finished_at\":null,\"payload\":{\"secret\":1},\"priority\":5}",
+      "expected": {
+        "status": {
+          "task_id": "t-3",
+          "name": "generate-pdf",
+          "status": "paused",
+          "claimed_attempts": 1,
+          "last_failure_code": "something_new",
+          "created_at": "2026-10-02T03:04:05Z",
+          "finished_at": null
+        }
+      }
+    },
+    {"name": "not_json", "body": "<html>OK</html>", "expected": {"error_code": "TASKS_UNEXPECTED_RESPONSE"}},
+    {"name": "array_body", "body": "[]", "expected": {"error_code": "TASKS_UNEXPECTED_RESPONSE"}},
+    {"name": "missing_task_id", "body": "{\"name\":\"a\",\"status\":\"queued\",\"claimed_attempts\":0,\"last_failure_code\":null,\"created_at\":\"2026-10-02T03:04:05Z\",\"finished_at\":null}", "expected": {"error_code": "TASKS_UNEXPECTED_RESPONSE"}},
+    {"name": "empty_name", "body": "{\"task_id\":\"t\",\"name\":\"\",\"status\":\"queued\",\"claimed_attempts\":0,\"last_failure_code\":null,\"created_at\":\"2026-10-02T03:04:05Z\",\"finished_at\":null}", "expected": {"error_code": "TASKS_UNEXPECTED_RESPONSE"}},
+    {"name": "status_not_a_string", "body": "{\"task_id\":\"t\",\"name\":\"a\",\"status\":1,\"claimed_attempts\":0,\"last_failure_code\":null,\"created_at\":\"2026-10-02T03:04:05Z\",\"finished_at\":null}", "expected": {"error_code": "TASKS_UNEXPECTED_RESPONSE"}},
+    {"name": "negative_claimed_attempts", "body": "{\"task_id\":\"t\",\"name\":\"a\",\"status\":\"queued\",\"claimed_attempts\":-1,\"last_failure_code\":null,\"created_at\":\"2026-10-02T03:04:05Z\",\"finished_at\":null}", "expected": {"error_code": "TASKS_UNEXPECTED_RESPONSE"}},
+    {"name": "fractional_claimed_attempts", "body": "{\"task_id\":\"t\",\"name\":\"a\",\"status\":\"queued\",\"claimed_attempts\":1.5,\"last_failure_code\":null,\"created_at\":\"2026-10-02T03:04:05Z\",\"finished_at\":null}", "expected": {"error_code": "TASKS_UNEXPECTED_RESPONSE"}},
+    {"name": "boolean_claimed_attempts", "body": "{\"task_id\":\"t\",\"name\":\"a\",\"status\":\"queued\",\"claimed_attempts\":true,\"last_failure_code\":null,\"created_at\":\"2026-10-02T03:04:05Z\",\"finished_at\":null}", "expected": {"error_code": "TASKS_UNEXPECTED_RESPONSE"}},
+    {"name": "string_claimed_attempts", "body": "{\"task_id\":\"t\",\"name\":\"a\",\"status\":\"queued\",\"claimed_attempts\":\"1\",\"last_failure_code\":null,\"created_at\":\"2026-10-02T03:04:05Z\",\"finished_at\":null}", "expected": {"error_code": "TASKS_UNEXPECTED_RESPONSE"}},
+    {"name": "missing_claimed_attempts", "body": "{\"task_id\":\"t\",\"name\":\"a\",\"status\":\"queued\",\"last_failure_code\":null,\"created_at\":\"2026-10-02T03:04:05Z\",\"finished_at\":null}", "expected": {"error_code": "TASKS_UNEXPECTED_RESPONSE"}},
+    {"name": "created_at_not_rfc3339", "body": "{\"task_id\":\"t\",\"name\":\"a\",\"status\":\"queued\",\"claimed_attempts\":0,\"last_failure_code\":null,\"created_at\":\"2026-10-02 03:04:05\",\"finished_at\":null}", "expected": {"error_code": "TASKS_UNEXPECTED_RESPONSE"}},
+    {"name": "created_at_without_offset", "body": "{\"task_id\":\"t\",\"name\":\"a\",\"status\":\"queued\",\"claimed_attempts\":0,\"last_failure_code\":null,\"created_at\":\"2026-10-02T03:04:05\",\"finished_at\":null}", "expected": {"error_code": "TASKS_UNEXPECTED_RESPONSE"}},
+    {"name": "created_at_month_out_of_range", "body": "{\"task_id\":\"t\",\"name\":\"a\",\"status\":\"queued\",\"claimed_attempts\":0,\"last_failure_code\":null,\"created_at\":\"2026-13-02T03:04:05Z\",\"finished_at\":null}", "expected": {"error_code": "TASKS_UNEXPECTED_RESPONSE"}},
+    {"name": "created_at_null", "body": "{\"task_id\":\"t\",\"name\":\"a\",\"status\":\"queued\",\"claimed_attempts\":0,\"last_failure_code\":null,\"created_at\":null,\"finished_at\":null}", "expected": {"error_code": "TASKS_UNEXPECTED_RESPONSE"}},
+    {"name": "last_failure_code_number", "body": "{\"task_id\":\"t\",\"name\":\"a\",\"status\":\"failed\",\"claimed_attempts\":1,\"last_failure_code\":3,\"created_at\":\"2026-10-02T03:04:05Z\",\"finished_at\":\"2026-10-02T03:04:06Z\"}", "expected": {"error_code": "TASKS_UNEXPECTED_RESPONSE"}},
+    {"name": "missing_last_failure_code", "body": "{\"task_id\":\"t\",\"name\":\"a\",\"status\":\"queued\",\"claimed_attempts\":0,\"created_at\":\"2026-10-02T03:04:05Z\",\"finished_at\":null}", "expected": {"error_code": "TASKS_UNEXPECTED_RESPONSE"}},
+    {"name": "finished_at_number", "body": "{\"task_id\":\"t\",\"name\":\"a\",\"status\":\"succeeded\",\"claimed_attempts\":1,\"last_failure_code\":null,\"created_at\":\"2026-10-02T03:04:05Z\",\"finished_at\":1759374246}", "expected": {"error_code": "TASKS_UNEXPECTED_RESPONSE"}},
+    {"name": "finished_at_not_rfc3339", "body": "{\"task_id\":\"t\",\"name\":\"a\",\"status\":\"succeeded\",\"claimed_attempts\":1,\"last_failure_code\":null,\"created_at\":\"2026-10-02T03:04:05Z\",\"finished_at\":\"yesterday\"}", "expected": {"error_code": "TASKS_UNEXPECTED_RESPONSE"}}
+  ],
+  "enqueue": [
+    {"name": "accepted", "status": 202, "body": "{\"task_id\":\"0b9f3f8e-5c1d-4a7b-9e2f-1d2c3b4a5f60\"}", "expected": {"task_id": "0b9f3f8e-5c1d-4a7b-9e2f-1d2c3b4a5f60"}},
+    {"name": "idempotent_replay", "status": 200, "body": "{\"task_id\":\"existing-id\",\"extra\":true}", "expected": {"task_id": "existing-id"}},
+    {"name": "empty_task_id", "status": 202, "body": "{\"task_id\":\"\"}", "expected": {"error_code": "TASKS_UNEXPECTED_RESPONSE"}},
+    {"name": "numeric_task_id", "status": 202, "body": "{\"task_id\":12}", "expected": {"error_code": "TASKS_UNEXPECTED_RESPONSE"}},
+    {"name": "not_json", "status": 202, "body": "accepted", "expected": {"error_code": "TASKS_UNEXPECTED_RESPONSE"}}
+  ]
+}

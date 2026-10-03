@@ -196,6 +196,73 @@ Intentional differences:
   form always retains the legacy route. An explicit Go `New(baseURL, token)`
   base URL also always retains legacy paths.
 
+### Tasks
+
+Background tasks: the app enqueues a run of a command it declared under
+`tasks:` in `keelson.yaml`, and the platform runs it once on a separate
+instance, retrying failed attempts. The HTTP contract (paths, request and
+response fields, error codes, auth) is owned by
+`docs/specs/app-platform-api-spec.md` § 9; the execution contract (limits,
+at-least-once delivery, retries, retention) by `docs/specs/product-spec.md`
+§ 2 and `docs/specs/jobs-and-cron-spec.md` § 12A. This section fixes only what
+the three SDKs must agree on.
+
+Guaranteed capability:
+
+- `enqueue(name, payload, idempotency_key)` → `task_id` (string). `payload` is
+  any JSON value and defaults to `null`; `idempotency_key` is optional
+  (1–128 printable ASCII characters). The SDK sends
+  `{"payload": ..., "idempotency_key": ...}` to
+  `POST {KEELSON_TASKS_BASE_URL}/internal/apps/{app_id}/tasks/{name}/enqueue`.
+  A new task (202) and a replay with the same idempotency key (200, the
+  existing `task_id`) both return the `task_id`; callers do not see the
+  difference. The 64 KiB limit is the platform's: the whole HTTP request body
+  must be at most 65,536 bytes, measured on the bytes the server receives.
+- `get(task_id)` → the task status object, with exactly the field names and
+  types of the API response (`app-platform-api-spec.md` § 9.3):
+
+  | Field | Type | Null when |
+  | --- | --- | --- |
+  | `task_id` | string | never |
+  | `name` | string (normalized task name) | never |
+  | `status` | `queued` / `running` / `succeeded` / `failed` / `cancelled` | never |
+  | `claimed_attempts` | integer, number of started attempts (≥ 0) | never |
+  | `last_failure_code` | string: `exit_nonzero` / `timed_out` / `no_completion` / `delivery_failed` / `manifest_unresolvable` / `quota_exhausted` | no attempt has failed yet, or `succeeded` |
+  | `created_at` | RFC 3339 UTC timestamp | never |
+  | `finished_at` | RFC 3339 UTC timestamp | status is not terminal |
+
+  `get` never returns the payload or stderr. An unknown `task_id`, or one that
+  belongs to another app, is a "not found" error (`TASK_NOT_FOUND`, HTTP 404).
+  `get` is guaranteed only while the app declares at least one task and is not
+  deleted: removing the last `tasks:` entry or deleting the app revokes the web
+  service account's permission to call the API, and later calls fail with an
+  auth error (Cloud Run 403 / runtime API 401), not `TASK_NOT_FOUND`.
+- remote auth: an OIDC id token from the metadata server whose audience is the
+  `KEELSON_TASKS_BASE_URL` value, sent as `Authorization: Bearer`. No token
+  env is wired.
+- API errors surface their stable code (`TASK_INVALID_REQUEST`,
+  `TASK_NOT_DECLARED`, `TASK_NOT_FOUND`, `TASKS_UNAVAILABLE`,
+  `TASK_PAYLOAD_TOO_LARGE`, `TASK_BACKLOG_LIMIT_EXCEEDED`,
+  `TASK_MONTHLY_QUOTA_EXCEEDED`) so callers can branch on it. The SDK does not
+  retry 429 responses automatically.
+- failures the API does not describe (auth, Cloud Run, transport, metadata
+  server, configuration, local CLI) surface as the SDK's own `TASKS_*` codes,
+  and only a transient failure is retried (see "Tasks SDK Error Codes" below)
+- local and Keelson backends, selected by the `KEELSON_MODE` fail-closed
+  contract (see "Tasks Runtime-Mode Contract" below)
+
+Intentional differences:
+
+- argument naming: `idempotency_key` (Python), `idempotencyKey` (Node), a
+  functional option (Go)
+- the status object's language shape (dataclass / plain object / struct) may
+  differ; field names on the wire and their meaning may not
+- error types follow each language's idiom (Python/Node raise `TasksError`;
+  Go returns errors, config errors wrap `tasks.ErrConfig`)
+
+There is intentionally **no** cancel, list, delayed ("run in n seconds"), or
+manual re-run API. A failed task is retried by enqueueing it again.
+
 ## Capability Matrix
 
 This matrix is the review baseline for subsequent changes. `Yes` means the
@@ -256,6 +323,18 @@ capability is part of the parity contract.
 | Webhook server bootstrap helper | optional | Yes | Yes | No | Allowed helper difference |
 | Replayed / expired signature rejection | guaranteed | Yes | Yes | Yes | Svix timestamp window (±300s) + HMAC reject expired-timestamp replays and tampered payloads in all three SDKs |
 | Within-window duplicate suppression (idempotency) | pluggable durable hook (token-fenced 3-state) + default best-effort | Yes | Yes | Yes | Each SDK exposes a pluggable idempotency store hook: Node/Python `setIdempotencyStore`/`set_idempotency_store`; Go `IdempotencyStore` with `VerifyWebhookOnce`/`VerifyEventWebhookOnce`. The hook runs `reserve → handler → commit(token)`, with `release(token)` on handler failure. `reserve` distinguishes **completed** (duplicate success), **pending** (retryable 503), and **acquired** (process now). Token compare-and-set prevents stale attempts from changing a newer reservation. Reservation or commit errors return retryable 500; release errors are logged and leave the lease to fence immediate retries. Shared application storage makes suppression durable across instances; the default store is process-local and best-effort. Delivery remains at-least-once, so handlers must tolerate retries. |
+
+### Tasks
+
+| Capability | Target | Node | Python | Go | Notes |
+| --- | --- | --- | --- | --- | --- |
+| `enqueue(name, payload, idempotency_key)` → `task_id` | guaranteed | Yes | Yes | Yes | Payload limit checked SDK-side on the exact request-body bytes |
+| `get(task_id)` → status object (`claimed_attempts`, `last_failure_code`, …) | guaranteed | Yes | Yes | Yes | Field names follow `app-platform-api-spec.md` § 9.3; `tasks_get_response.json` fixture |
+| Stable API error codes surfaced to the caller | guaranteed | Yes | Yes | Yes | One error type with `code`; `tasks_error_mapping.json` fixture |
+| Transient-failure retry (3 attempts; enqueue only with an idempotency key) | guaranteed | Yes | Yes | Yes | See "Tasks SDK Error Codes" |
+| Local + Keelson backends | guaranteed | Yes | Yes | Yes | `KEELSON_MODE` fail-closed contract; `tasks_mode_resolution.json` / `tasks_local_cli_result.json` fixtures |
+| Idempotency key argument shape | intentional difference | Yes | Yes | Yes | `idempotency_key` / `idempotencyKey` / Go option |
+| Cancel / list / delayed enqueue | intentionally absent | No | No | No | Cancellation is console-only; no delay or re-run in v1 |
 
 ## Current Accidental Differences
 
@@ -395,6 +474,145 @@ array, a scalar); a present `items` that is not an array (including an explicit
 missing, `null`, or not a string; or a present `nextPageToken` that is not a
 string (including an explicit `null`). Only genuine **absence** of `items` /
 `nextPageToken` is allowed (an empty page / the last page).
+
+## Tasks Runtime-Mode Contract
+
+The Tasks SDK uses the same fail-closed `KEELSON_MODE` machinery as `files`:
+**`KEELSON_MODE` is the single mode signal**, and the SDK never silently
+falls back to local execution on Keelson. Resolution is identical across
+Go/Node/Python:
+
+| Condition | Result |
+| --- | --- |
+| `KEELSON_MODE=keelson` + `KEELSON_TASKS_BASE_URL` set | remote (the Tasks API on the runtime API) |
+| `KEELSON_MODE=keelson` + `KEELSON_TASKS_BASE_URL` missing | **error** (capability unavailable; covers the intake flag being off) |
+| `KEELSON_MODE=local` | local (CLI subprocess, below) |
+| `KEELSON_MODE` unset + core identifier set | **error** (refuse silent fallback on platform) |
+| `KEELSON_MODE` unset + no platform env (remote env is **not** consulted) | local (zero-config development) |
+| Any other non-empty `KEELSON_MODE` (unknown) | **error** (never resolves to local) |
+
+The platform signal is the same set as `files`: any of `KEELSON_APP_ID` /
+`KEELSON_WORKSPACE_ID` / `KEELSON_DEPLOY_ID`; the deprecated
+`KEELSON_TENANT_ID` alias remains accepted. In remote mode the `{app_id}`
+path segment is `KEELSON_APP_ID`.
+
+`KEELSON_APP_ID` is **not** a mode signal: remote mode is selected by
+`KEELSON_MODE=keelson` + `KEELSON_TASKS_BASE_URL` alone. Once remote mode is
+selected, a missing `KEELSON_APP_ID` is also a configuration error
+(`TASKS_NOT_CONFIGURED`), because the `/internal/apps/{app_id}/...` path
+cannot be built.
+
+Python and Node resolve the mode on every `enqueue` / `get` call; Go resolves
+it once in `tasks.New()` (like `files`). The id-token audience is the
+`KEELSON_TASKS_BASE_URL` value as injected (only surrounding whitespace
+removed); the request URL is that value with trailing `/` removed, followed by
+`/internal/...`. The `tasks_mode_resolution.json` fixture pins every row.
+
+### Local-mode result (CLI-backed dev only)
+
+In local mode `enqueue` runs the declared command synchronously and returns
+when it has finished:
+
+- The SDK starts the CLI found on `PATH` as a child process,
+  `keelson dev task run <name> --payload - --json`, in the app process's
+  working directory, writes the payload JSON to its stdin, and waits for it to
+  exit (Node waits asynchronously and never blocks the event loop). The CLI
+  reads the declaration from the local `keelson.yaml` and passes the command
+  the same stdin document as production (`attempt_no` is `1`). The CLI's
+  stderr (including the command's stdout and stderr) goes to the app's stderr;
+  its stdout carries exactly one JSON object, `{"task": {...}}` or
+  `{"error": {...}}`, and the SDK decides from that object alone, not from the
+  exit code (`tasks_local_cli_result.json`).
+- One attempt only: no retry, no concurrency limit, no backlog limit, no
+  monthly quota, no ledger. The declared `timeout` still applies.
+- A command that exits non-zero or times out is **not** an `enqueue` error:
+  `enqueue` returns a `task_id`, and `get` reports `status = failed` with
+  `last_failure_code` `exit_nonzero` or `timed_out`. A command that exits 0
+  gives `status = succeeded`.
+- `enqueue` raises/returns an error only when:
+  - the name is empty, the idempotency key is malformed, or the payload cannot
+    be serialized to JSON (`TASK_INVALID_REQUEST`), or the request body would
+    exceed 65,536 bytes (`TASK_PAYLOAD_TOO_LARGE`). These are the same
+    pre-send checks as remote mode, run before the CLI is started; the CLI
+    reports the same codes;
+  - the name is not declared in `keelson.yaml` (`TASK_NOT_DECLARED`);
+  - the CLI is not on `PATH` (`TASKS_LOCAL_CLI_NOT_FOUND`; the message
+    includes the install instructions `https://keelson.dev/install.sh`);
+  - the CLI cannot be started, is interrupted, prints anything other than one
+    valid result, or reports any other error, including an older CLI without
+    `dev task run` (`TASKS_LOCAL_CLI_FAILED`; the message suggests
+    `keelson upgrade`).
+- Go only: when `ctx` is cancelled, the SDK sends `SIGTERM` to the CLI (which
+  forwards it to the command's process group), force-kills it after 130 s,
+  and `Enqueue` returns `ctx.Err()` itself rather than a `*tasks.Error`.
+- `get` returns the same fields as production, with `claimed_attempts = 1`
+  and `finished_at` set. It knows only tasks enqueued **in the same process**;
+  any other `task_id` (another process, after a restart, unknown) is the same
+  "not found" error as the production 404.
+- Within the same process, an `enqueue` with the same name and idempotency key
+  returns the existing `task_id` without running the command again, matching
+  production. The key is recorded only after the CLI finishes, so two
+  concurrent calls with the same key both run the command; the first recorded
+  `task_id` keeps the key. A running task is never visible to `get`.
+
+A local run passing does not prove the same terminal state on Keelson: the
+platform retries, applies plan limits, and may run an attempt more than once.
+
+## Tasks SDK Error Codes
+
+All three SDKs raise/return **one** error type (Python/Node `TasksError`, Go
+`*tasks.Error`) carrying `code` (string), `status` (the HTTP status; Python
+`None` / Node `null` / Go `0` when there was no HTTP response), and `message`.
+There are no per-code subclasses, so every language branches the same way
+(`err.code == "TASK_NOT_DECLARED"`). Go's `TASKS_NOT_CONFIGURED` error also
+unwraps to `tasks.ErrConfig`. The payload never appears in a message.
+
+A non-success HTTP response is classified in this fixed order, stopping at the
+first hit (`tasks_error_mapping.json`):
+
+1. 401 → `TASKS_UNAUTHORIZED` (whatever the body)
+2. 403 → `TASKS_FORBIDDEN` (Cloud Run's HTML; whatever the body)
+3. a body `{"error": {"code": <non-empty string>}}` → that code verbatim,
+   including codes added later and 5xx responses (503 + `TASKS_UNAVAILABLE`
+   is passed through and **not** retried)
+4. 502 / 503 / 504 → `TASKS_UNAVAILABLE_TRANSIENT`
+5. any other 5xx → `TASKS_SERVER_ERROR`
+6. anything else (including a redirect, which is never followed) →
+   `TASKS_HTTP_ERROR`
+
+| Code | Meaning | Retried |
+| --- | --- | --- |
+| `TASKS_UNAVAILABLE` | **Server code.** Intake is closed (the platform flag is off). Retrying does not help | no |
+| `TASKS_UNAVAILABLE_TRANSIENT` | **SDK code.** 502 / 503 / 504 without an error envelope, connection failure, or the 15 s per-call timeout | yes (below) |
+| `TASKS_UNAUTHORIZED` | 401 from the runtime API (id token rejected, e.g. wrong audience) | no |
+| `TASKS_FORBIDDEN` | 403 from Cloud Run. Right after the first deploy that declares `tasks:`, the permission can take a few minutes to propagate; the message says so | no |
+| `TASKS_SERVER_ERROR` | Any other 5xx without an error envelope | no |
+| `TASKS_HTTP_ERROR` | Any other non-success status without an error envelope | no |
+| `TASKS_UNEXPECTED_RESPONSE` | A 200 / 202 body that is not the documented shape (`tasks_get_response.json`). An unknown `status` value is **not** rejected | no |
+| `TASKS_IDENTITY_TOKEN_ERROR` | No id token from the metadata server | no |
+| `TASKS_NOT_CONFIGURED` | The mode resolution above failed, including a missing `KEELSON_APP_ID` in remote mode (Go: wraps `tasks.ErrConfig`) | — |
+| `TASKS_LOCAL_CLI_NOT_FOUND` | Local mode: no `keelson` on `PATH` (message has the install instructions) | — |
+| `TASKS_LOCAL_CLI_FAILED` | Local mode: the CLI failed or printed no valid result (message suggests `keelson upgrade`) | — |
+
+The SDK's own codes start with `TASKS_` and never collide with the server's
+(`TASK_*` and `TASKS_UNAVAILABLE`). Do not confuse `TASKS_UNAVAILABLE` (intake
+closed; permanent until the platform turns it on) with
+`TASKS_UNAVAILABLE_TRANSIENT` (a passing outage).
+
+Retry: only `TASKS_UNAVAILABLE_TRANSIENT` is retried, up to 3 attempts in
+total, waiting 0.5 s and then 1 s. `get` always retries; `enqueue` retries
+**only with an idempotency key**, because without one a request the server
+already accepted would be enqueued twice (its message suggests adding a key).
+403, 429, and every other code are returned immediately. A fresh id token is
+fetched for every HTTP call.
+
+Pre-send checks, identical in remote and local mode: an empty name or a
+malformed idempotency key (not 1–128 characters in U+0020–U+007E), or a
+payload that cannot be serialized to JSON, is `TASK_INVALID_REQUEST`; a
+request body (`{"payload": ..., "idempotency_key": ...}` as the SDK serializes
+it) over 65,536 bytes is `TASK_PAYLOAD_TOO_LARGE`. Names are not normalized
+SDK-side (the server trims and lowercases them) and are URL-encoded in the
+path, as is the `task_id` for `get`.
 
 ## Contract Decisions
 

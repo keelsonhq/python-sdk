@@ -206,6 +206,21 @@ def test_parse_member_item_with_role() -> None:
     assert member == MemberItem(id="abc-123", email="alice@example.com", name="Alice", role="ADMIN")
 
 
+@pytest.mark.parametrize(
+    ("extra", "expected"),
+    [
+        ({"image_url": "https://img.clerk.com/abc"}, "https://img.clerk.com/abc"),
+        ({"image_url": None}, None),
+        ({}, None),
+    ],
+    ids=["url", "null", "absent"],
+)
+def test_parse_member_item_image_url(extra: dict[str, object], expected: str | None) -> None:
+    raw = {"id": "abc-123", "email": "alice@example.com", "name": "Alice", **extra}
+    member = _parse_member_item(raw)
+    assert member.image_url == expected
+
+
 def test_parse_member_item_missing_id() -> None:
     with pytest.raises(IdentityError, match="missing 'id'"):
         _parse_member_item({"email": "a@b.com", "name": "A"})
@@ -797,13 +812,13 @@ class TestUserAgentHeader:
         captured, mock = _capture_request(_EMPTY_MEMBERS)
         with mock:
             list_members(base_url="http://test", app_token="keelson_xyz")
-        assert captured[0].get_header("User-agent") == "Keelson-Python-SDK/0.1.1"
+        assert captured[0].get_header("User-agent") == "Keelson-Python-SDK/0.2.0"
 
     def test_cookie_auth_also_sends_sdk_user_agent(self) -> None:
         captured, mock = _capture_request(_EMPTY_MEMBERS)
         with mock:
             list_members(base_url="http://test", cookie="sid=1")
-        assert captured[0].get_header("User-agent") == "Keelson-Python-SDK/0.1.1"
+        assert captured[0].get_header("User-agent") == "Keelson-Python-SDK/0.2.0"
 
 
 class TestAppTokenHeader:

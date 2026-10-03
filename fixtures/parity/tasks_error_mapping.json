@@ -1,0 +1,36 @@
+{
+  "description": "Tasks SDK error mapping for a runtime API call (PARITY.md, Tasks; T-1037 design 3). Each `http` case is a non-success response: `status` plus the raw response `body` text. The SDK classifies it in this fixed order and stops at the first hit: 401 → TASKS_UNAUTHORIZED; 403 → TASKS_FORBIDDEN; a valid envelope {\"error\": {\"code\": <non-empty string>}} → that code verbatim (also for 5xx, so 503 + TASKS_UNAVAILABLE is not retried); 502/503/504 → TASKS_UNAVAILABLE_TRANSIENT; any other 5xx → TASKS_SERVER_ERROR; anything else → TASKS_HTTP_ERROR. `expected.status` is the HTTP status the error carries. `expected.transient` marks the only class the SDK retries (get always; enqueue only with an idempotency key; 3 attempts in total, waiting 0.5 s then 1 s). Each `transport` case is a failure with no HTTP response (`status` is null / 0 in Go).",
+  "http": [
+    {"name": "invalid_request_envelope", "status": 400, "body": "{\"error\":{\"code\":\"TASK_INVALID_REQUEST\",\"message\":\"bad body\"}}", "expected": {"code": "TASK_INVALID_REQUEST", "status": 400, "transient": false}},
+    {"name": "not_declared_envelope", "status": 404, "body": "{\"error\":{\"code\":\"TASK_NOT_DECLARED\",\"message\":\"no such task\"}}", "expected": {"code": "TASK_NOT_DECLARED", "status": 404, "transient": false}},
+    {"name": "not_found_envelope", "status": 404, "body": "{\"error\":{\"code\":\"TASK_NOT_FOUND\",\"message\":\"no such task id\"}}", "expected": {"code": "TASK_NOT_FOUND", "status": 404, "transient": false}},
+    {"name": "unavailable_envelope_409", "status": 409, "body": "{\"error\":{\"code\":\"TASKS_UNAVAILABLE\",\"message\":\"intake closed\"}}", "expected": {"code": "TASKS_UNAVAILABLE", "status": 409, "transient": false}},
+    {"name": "payload_too_large_envelope", "status": 413, "body": "{\"error\":{\"code\":\"TASK_PAYLOAD_TOO_LARGE\",\"message\":\"too large\"}}", "expected": {"code": "TASK_PAYLOAD_TOO_LARGE", "status": 413, "transient": false}},
+    {"name": "backlog_limit_envelope", "status": 429, "body": "{\"error\":{\"code\":\"TASK_BACKLOG_LIMIT_EXCEEDED\",\"message\":\"backlog\"}}", "expected": {"code": "TASK_BACKLOG_LIMIT_EXCEEDED", "status": 429, "transient": false}},
+    {"name": "monthly_quota_envelope", "status": 429, "body": "{\"error\":{\"code\":\"TASK_MONTHLY_QUOTA_EXCEEDED\",\"message\":\"quota\"}}", "expected": {"code": "TASK_MONTHLY_QUOTA_EXCEEDED", "status": 429, "transient": false}},
+    {"name": "future_code_passes_through", "status": 422, "body": "{\"error\":{\"code\":\"TASK_SOMETHING_NEW\",\"message\":\"new\"}}", "expected": {"code": "TASK_SOMETHING_NEW", "status": 422, "transient": false}},
+    {"name": "envelope_without_message", "status": 404, "body": "{\"error\":{\"code\":\"TASK_NOT_FOUND\"}}", "expected": {"code": "TASK_NOT_FOUND", "status": 404, "transient": false}},
+    {"name": "envelope_on_503_is_not_transient", "status": 503, "body": "{\"error\":{\"code\":\"TASKS_UNAVAILABLE\",\"message\":\"intake closed\"}}", "expected": {"code": "TASKS_UNAVAILABLE", "status": 503, "transient": false}},
+    {"name": "envelope_on_500_passes_through", "status": 500, "body": "{\"error\":{\"code\":\"TASK_INTERNAL\",\"message\":\"x\"}}", "expected": {"code": "TASK_INTERNAL", "status": 500, "transient": false}},
+    {"name": "unauthorized_runtime_api", "status": 401, "body": "{\"error\":{\"code\":\"unauthorized\",\"message\":\"bad token\"}}", "expected": {"code": "TASKS_UNAUTHORIZED", "status": 401, "transient": false}},
+    {"name": "unauthorized_without_body", "status": 401, "body": "", "expected": {"code": "TASKS_UNAUTHORIZED", "status": 401, "transient": false}},
+    {"name": "forbidden_cloud_run_html", "status": 403, "body": "<html><head><title>403 Forbidden</title></head><body>Error: Forbidden</body></html>", "expected": {"code": "TASKS_FORBIDDEN", "status": 403, "transient": false}},
+    {"name": "forbidden_ignores_envelope", "status": 403, "body": "{\"error\":{\"code\":\"TASK_NOT_DECLARED\",\"message\":\"x\"}}", "expected": {"code": "TASKS_FORBIDDEN", "status": 403, "transient": false}},
+    {"name": "bad_gateway_html", "status": 502, "body": "<html>Bad Gateway</html>", "expected": {"code": "TASKS_UNAVAILABLE_TRANSIENT", "status": 502, "transient": true}},
+    {"name": "service_unavailable_plain", "status": 503, "body": "Service Unavailable", "expected": {"code": "TASKS_UNAVAILABLE_TRANSIENT", "status": 503, "transient": true}},
+    {"name": "gateway_timeout_empty", "status": 504, "body": "", "expected": {"code": "TASKS_UNAVAILABLE_TRANSIENT", "status": 504, "transient": true}},
+    {"name": "envelope_with_empty_code_is_not_an_envelope", "status": 503, "body": "{\"error\":{\"code\":\"\",\"message\":\"x\"}}", "expected": {"code": "TASKS_UNAVAILABLE_TRANSIENT", "status": 503, "transient": true}},
+    {"name": "envelope_with_non_string_code_is_not_an_envelope", "status": 503, "body": "{\"error\":{\"code\":7}}", "expected": {"code": "TASKS_UNAVAILABLE_TRANSIENT", "status": 503, "transient": true}},
+    {"name": "string_error_is_not_an_envelope", "status": 503, "body": "{\"error\":\"TASKS_UNAVAILABLE\"}", "expected": {"code": "TASKS_UNAVAILABLE_TRANSIENT", "status": 503, "transient": true}},
+    {"name": "internal_server_error_plain", "status": 500, "body": "Internal Server Error", "expected": {"code": "TASKS_SERVER_ERROR", "status": 500, "transient": false}},
+    {"name": "other_5xx", "status": 501, "body": "", "expected": {"code": "TASKS_SERVER_ERROR", "status": 501, "transient": false}},
+    {"name": "not_found_without_envelope", "status": 404, "body": "<html>Not Found</html>", "expected": {"code": "TASKS_HTTP_ERROR", "status": 404, "transient": false}},
+    {"name": "too_many_requests_without_envelope", "status": 429, "body": "Rate exceeded.", "expected": {"code": "TASKS_HTTP_ERROR", "status": 429, "transient": false}},
+    {"name": "bad_request_with_array_body", "status": 400, "body": "[\"TASK_INVALID_REQUEST\"]", "expected": {"code": "TASKS_HTTP_ERROR", "status": 400, "transient": false}},
+    {"name": "redirect_is_not_followed", "status": 302, "body": "", "expected": {"code": "TASKS_HTTP_ERROR", "status": 302, "transient": false}}
+  ],
+  "transport": [
+    {"name": "connection_refused", "failure": "connection_error", "expected": {"code": "TASKS_UNAVAILABLE_TRANSIENT", "transient": true}},
+    {"name": "request_timed_out", "failure": "timeout", "expected": {"code": "TASKS_UNAVAILABLE_TRANSIENT", "transient": true}}
+  ]
+}

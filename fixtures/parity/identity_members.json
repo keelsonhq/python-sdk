@@ -4,13 +4,21 @@
       "id": "usr_m01",
       "email": "alice@example.com",
       "name": "Alice",
-      "role": "admin"
+      "role": "admin",
+      "image_url": "https://img.clerk.com/parity-alice"
     },
     {
       "id": "usr_m02",
       "email": "bob@example.com",
       "name": "Bob",
-      "role": ""
+      "role": "",
+      "image_url": null
+    },
+    {
+      "id": "usr_m03",
+      "email": "carol@example.com",
+      "name": "Carol",
+      "role": "builder"
     }
   ],
   "limit": 25,

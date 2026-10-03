@@ -56,17 +56,23 @@ def test_parity_members() -> None:
     assert result.limit == 25
     assert result.offset == 0
     assert result.next_offset is None
-    assert len(result.items) == 2
+    assert len(result.items) == 3
 
     assert result.items[0].id == "usr_m01"
     assert result.items[0].email == "alice@example.com"
     assert result.items[0].name == "Alice"
     assert result.items[0].role == "admin"
+    assert result.items[0].image_url == "https://img.clerk.com/parity-alice"
 
     assert result.items[1].id == "usr_m02"
     assert result.items[1].email == "bob@example.com"
     # Python: role "" in JSON → "" (empty string preserved)
     assert result.items[1].role == ""
+    assert result.items[1].image_url is None
+
+    # Key absent (older gateway) parses to None, same as an explicit null.
+    assert result.items[2].id == "usr_m03"
+    assert result.items[2].image_url is None
 
 
 def test_parity_groups() -> None:

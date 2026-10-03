@@ -1,0 +1,122 @@
+{
+  "description": "Tasks SDK KEELSON_MODE resolution (PARITY.md, Tasks Runtime-Mode Contract; T-1037). Each case sets exactly the env in `env` (every other KEELSON_* variable is unset) and resolves the mode the way enqueue/get do (Go: tasks.New()). `expected.mode` is `remote` or `local`; a config error is `expected.error_code` (always TASKS_NOT_CONFIGURED). Values are compared after trimming surrounding whitespace, and KEELSON_MODE is case-insensitive. For `remote`, `audience` is the id-token audience (the KEELSON_TASKS_BASE_URL value, only surrounding whitespace removed; a trailing slash is kept) and `api_base` is the URL the `/internal/apps/...` path is appended to (the same value with trailing slashes removed). `app_id` is the `{app_id}` path segment. KEELSON_APP_ID is not a mode signal: it is checked only after remote mode is selected.",
+  "env_vars": [
+    "KEELSON_MODE",
+    "KEELSON_TASKS_BASE_URL",
+    "KEELSON_APP_ID",
+    "KEELSON_WORKSPACE_ID",
+    "KEELSON_TENANT_ID",
+    "KEELSON_DEPLOY_ID"
+  ],
+  "cases": [
+    {
+      "name": "keelson_with_base_url_is_remote",
+      "env": {
+        "KEELSON_MODE": "keelson",
+        "KEELSON_TASKS_BASE_URL": "https://keelson-runtime-api-abc123-an.a.run.app",
+        "KEELSON_APP_ID": "app_123"
+      },
+      "expected": {
+        "mode": "remote",
+        "audience": "https://keelson-runtime-api-abc123-an.a.run.app",
+        "api_base": "https://keelson-runtime-api-abc123-an.a.run.app",
+        "app_id": "app_123"
+      }
+    },
+    {
+      "name": "keelson_mode_is_case_insensitive_and_trimmed",
+      "env": {
+        "KEELSON_MODE": " Keelson ",
+        "KEELSON_TASKS_BASE_URL": " https://rt.example/ ",
+        "KEELSON_APP_ID": " app_123 ",
+        "KEELSON_WORKSPACE_ID": "ws_1"
+      },
+      "expected": {
+        "mode": "remote",
+        "audience": "https://rt.example/",
+        "api_base": "https://rt.example",
+        "app_id": "app_123"
+      }
+    },
+    {
+      "name": "keelson_without_base_url_is_not_configured",
+      "env": {"KEELSON_MODE": "keelson", "KEELSON_APP_ID": "app_123"},
+      "expected": {"error_code": "TASKS_NOT_CONFIGURED"}
+    },
+    {
+      "name": "keelson_with_blank_base_url_is_not_configured",
+      "env": {"KEELSON_MODE": "keelson", "KEELSON_TASKS_BASE_URL": "   ", "KEELSON_APP_ID": "app_123"},
+      "expected": {"error_code": "TASKS_NOT_CONFIGURED"}
+    },
+    {
+      "name": "keelson_without_app_id_is_not_configured",
+      "env": {"KEELSON_MODE": "keelson", "KEELSON_TASKS_BASE_URL": "https://rt.example", "KEELSON_WORKSPACE_ID": "ws_1"},
+      "expected": {"error_code": "TASKS_NOT_CONFIGURED"}
+    },
+    {
+      "name": "local_is_local",
+      "env": {"KEELSON_MODE": "local"},
+      "expected": {"mode": "local"}
+    },
+    {
+      "name": "local_wins_over_platform_env_and_base_url",
+      "env": {
+        "KEELSON_MODE": "LOCAL",
+        "KEELSON_TASKS_BASE_URL": "https://rt.example",
+        "KEELSON_APP_ID": "app_123",
+        "KEELSON_DEPLOY_ID": "dep_1"
+      },
+      "expected": {"mode": "local"}
+    },
+    {
+      "name": "unset_with_app_id_refuses_local_fallback",
+      "env": {"KEELSON_APP_ID": "app_123"},
+      "expected": {"error_code": "TASKS_NOT_CONFIGURED"}
+    },
+    {
+      "name": "unset_with_workspace_id_refuses_local_fallback",
+      "env": {"KEELSON_WORKSPACE_ID": "ws_1"},
+      "expected": {"error_code": "TASKS_NOT_CONFIGURED"}
+    },
+    {
+      "name": "unset_with_deprecated_tenant_id_refuses_local_fallback",
+      "env": {"KEELSON_TENANT_ID": "t_1"},
+      "expected": {"error_code": "TASKS_NOT_CONFIGURED"}
+    },
+    {
+      "name": "unset_with_deploy_id_refuses_local_fallback",
+      "env": {"KEELSON_DEPLOY_ID": "dep_1"},
+      "expected": {"error_code": "TASKS_NOT_CONFIGURED"}
+    },
+    {
+      "name": "unset_with_platform_env_and_base_url_still_refuses",
+      "env": {"KEELSON_APP_ID": "app_123", "KEELSON_TASKS_BASE_URL": "https://rt.example"},
+      "expected": {"error_code": "TASKS_NOT_CONFIGURED"}
+    },
+    {
+      "name": "unset_with_only_base_url_is_local",
+      "env": {"KEELSON_TASKS_BASE_URL": "https://rt.example"},
+      "expected": {"mode": "local"}
+    },
+    {
+      "name": "unset_with_blank_platform_env_is_local",
+      "env": {"KEELSON_APP_ID": "  ", "KEELSON_MODE": ""},
+      "expected": {"mode": "local"}
+    },
+    {
+      "name": "nothing_set_is_local",
+      "env": {},
+      "expected": {"mode": "local"}
+    },
+    {
+      "name": "unknown_mode_is_not_configured",
+      "env": {"KEELSON_MODE": "production"},
+      "expected": {"error_code": "TASKS_NOT_CONFIGURED"}
+    },
+    {
+      "name": "unknown_mode_never_resolves_to_local",
+      "env": {"KEELSON_MODE": "dev"},
+      "expected": {"error_code": "TASKS_NOT_CONFIGURED"}
+    }
+  ]
+}

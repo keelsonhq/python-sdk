@@ -1,0 +1,201 @@
+{
+  "description": "Local-mode Tasks contract between the SDKs and `keelson dev task run <name> --payload - --json` (T-1037). The CLI prints exactly one JSON object on stdout: {\"task\": {...}} when the declared command ran (succeeded or failed; the CLI exits 0 / 1), otherwise {\"error\": {...}} (the CLI's structured error; readers look only at error.code). The SDK ignores the CLI's exit code and decides from stdout alone. `task_keys` is the exact key set of the task object; the CLI test pins its real output to it. Each case's `stdout` (a JSON value, printed compactly) or `stdout_text` (raw text) is what a fake CLI prints; `sdk` is the expected SDK outcome: `status` is what get(task_id) returns afterwards (the seven production fields; exit_code and timed_out are dropped), `error_code` is the TasksError code enqueue raises/returns.",
+  "argv": ["dev", "task", "run", "<name>", "--payload", "-", "--json"],
+  "task_keys": [
+    "claimed_attempts",
+    "created_at",
+    "exit_code",
+    "finished_at",
+    "last_failure_code",
+    "name",
+    "status",
+    "task_id",
+    "timed_out"
+  ],
+  "error_keys": ["code", "hint", "message", "retryable"],
+  "cases": [
+    {
+      "name": "succeeded",
+      "stdout": {
+        "task": {
+          "task_id": "0b9f3f8e-5c1d-4a7b-9e2f-1d2c3b4a5f60",
+          "name": "generate-pdf",
+          "status": "succeeded",
+          "claimed_attempts": 1,
+          "last_failure_code": null,
+          "created_at": "2026-10-02T03:04:05.123456Z",
+          "finished_at": "2026-10-02T03:04:06.234567Z",
+          "exit_code": 0,
+          "timed_out": false
+        }
+      },
+      "sdk": {
+        "task_id": "0b9f3f8e-5c1d-4a7b-9e2f-1d2c3b4a5f60",
+        "status": {
+          "task_id": "0b9f3f8e-5c1d-4a7b-9e2f-1d2c3b4a5f60",
+          "name": "generate-pdf",
+          "status": "succeeded",
+          "claimed_attempts": 1,
+          "last_failure_code": null,
+          "created_at": "2026-10-02T03:04:05.123456Z",
+          "finished_at": "2026-10-02T03:04:06.234567Z"
+        }
+      }
+    },
+    {
+      "name": "failed_exit_nonzero",
+      "stdout": {
+        "task": {
+          "task_id": "1c0a4f9f-6d2e-4b8c-8f30-2e3d4c5b6a71",
+          "name": "generate-pdf",
+          "status": "failed",
+          "claimed_attempts": 1,
+          "last_failure_code": "exit_nonzero",
+          "created_at": "2026-10-02T03:04:05.000000Z",
+          "finished_at": "2026-10-02T03:04:05.500000Z",
+          "exit_code": 3,
+          "timed_out": false
+        }
+      },
+      "sdk": {
+        "task_id": "1c0a4f9f-6d2e-4b8c-8f30-2e3d4c5b6a71",
+        "status": {
+          "task_id": "1c0a4f9f-6d2e-4b8c-8f30-2e3d4c5b6a71",
+          "name": "generate-pdf",
+          "status": "failed",
+          "claimed_attempts": 1,
+          "last_failure_code": "exit_nonzero",
+          "created_at": "2026-10-02T03:04:05.000000Z",
+          "finished_at": "2026-10-02T03:04:05.500000Z"
+        }
+      }
+    },
+    {
+      "name": "failed_timed_out",
+      "stdout": {
+        "task": {
+          "task_id": "2d1b5a0a-7e3f-4c9d-a041-3f4e5d6c7b82",
+          "name": "generate-pdf",
+          "status": "failed",
+          "claimed_attempts": 1,
+          "last_failure_code": "timed_out",
+          "created_at": "2026-10-02T03:04:05.000000Z",
+          "finished_at": "2026-10-02T03:09:05.000000Z",
+          "exit_code": null,
+          "timed_out": true
+        }
+      },
+      "sdk": {
+        "task_id": "2d1b5a0a-7e3f-4c9d-a041-3f4e5d6c7b82",
+        "status": {
+          "task_id": "2d1b5a0a-7e3f-4c9d-a041-3f4e5d6c7b82",
+          "name": "generate-pdf",
+          "status": "failed",
+          "claimed_attempts": 1,
+          "last_failure_code": "timed_out",
+          "created_at": "2026-10-02T03:04:05.000000Z",
+          "finished_at": "2026-10-02T03:09:05.000000Z"
+        }
+      }
+    },
+    {
+      "name": "not_declared",
+      "stdout": {
+        "error": {
+          "code": "TASK_NOT_DECLARED",
+          "message": "Task \"nope\" is not declared in keelson.yaml.",
+          "hint": "Declare it under tasks: in keelson.yaml (declared: generate-pdf).",
+          "retryable": false
+        }
+      },
+      "sdk": {"error_code": "TASK_NOT_DECLARED"}
+    },
+    {
+      "name": "invalid_request",
+      "stdout": {
+        "error": {
+          "code": "TASK_INVALID_REQUEST",
+          "message": "The task payload is not valid JSON.",
+          "hint": "Pass a JSON value with --payload, or `--payload -` to read it from stdin.",
+          "retryable": false
+        }
+      },
+      "sdk": {"error_code": "TASK_INVALID_REQUEST"}
+    },
+    {
+      "name": "payload_too_large",
+      "stdout": {
+        "error": {
+          "code": "TASK_PAYLOAD_TOO_LARGE",
+          "message": "The task payload is larger than 65536 bytes.",
+          "hint": "Store large data elsewhere (for example in the database) and pass its ID in the payload.",
+          "retryable": false
+        }
+      },
+      "sdk": {"error_code": "TASK_PAYLOAD_TOO_LARGE"}
+    },
+    {
+      "name": "interrupted",
+      "stdout": {
+        "error": {
+          "code": "task_interrupted",
+          "message": "Task \"generate-pdf\" was interrupted; the command was stopped.",
+          "hint": "The CLI received Ctrl-C or SIGTERM. Run the task again when ready.",
+          "retryable": false
+        }
+      },
+      "sdk": {"error_code": "TASKS_LOCAL_CLI_FAILED"}
+    },
+    {
+      "name": "config_not_found",
+      "stdout": {
+        "error": {
+          "code": "deploy_config_not_found",
+          "message": "Deployment configuration file keelson.yaml was not found in the current directory.",
+          "hint": "Run this command from the directory containing keelson.yaml, or create keelson.yaml before deploying.",
+          "retryable": false
+        }
+      },
+      "sdk": {"error_code": "TASKS_LOCAL_CLI_FAILED"}
+    },
+    {
+      "name": "old_cli_usage_error",
+      "stdout": {
+        "error": {
+          "code": "usage",
+          "message": "unknown dev subcommand: task",
+          "hint": "Run `keelson --help` for usage.",
+          "retryable": false
+        }
+      },
+      "sdk": {"error_code": "TASKS_LOCAL_CLI_FAILED"}
+    },
+    {
+      "name": "task_body_invalid",
+      "stdout": {
+        "task": {
+          "task_id": "3e2c6b1b-8f40-4dae-b152-405f6e7d8c93",
+          "name": "generate-pdf",
+          "status": "succeeded",
+          "claimed_attempts": -1,
+          "last_failure_code": null,
+          "created_at": "2026-10-02T03:04:05.000000Z",
+          "finished_at": "2026-10-02T03:04:06.000000Z",
+          "exit_code": 0,
+          "timed_out": false
+        }
+      },
+      "sdk": {"error_code": "TASKS_LOCAL_CLI_FAILED"}
+    },
+    {
+      "name": "not_json",
+      "stdout_text": "keelson: command not understood\n",
+      "sdk": {"error_code": "TASKS_LOCAL_CLI_FAILED"}
+    },
+    {
+      "name": "empty_output",
+      "stdout_text": "",
+      "sdk": {"error_code": "TASKS_LOCAL_CLI_FAILED"}
+    }
+  ]
+}

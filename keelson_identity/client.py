@@ -13,7 +13,7 @@ from urllib.request import Request, urlopen
 # Explicit UA: urllib's default ``Python-urllib/3.x`` is blocked by Cloudflare
 # Browser Integrity Check (Error 1010 browser_signature_banned) on the
 # ``*.keelson.run`` / ``*.keelson-stage.run`` zones. See T-0595.
-_SDK_USER_AGENT = "Keelson-Python-SDK/0.1.1"
+_SDK_USER_AGENT = "Keelson-Python-SDK/0.2.0"
 
 
 class IdentityError(RuntimeError):
@@ -55,6 +55,8 @@ class MemberItem:
     email: str
     name: str
     role: str | None = None
+    # Clerk-hosted profile image URL; None when the member has no uploaded image.
+    image_url: str | None = None
 
 
 @dataclass(frozen=True)
@@ -407,7 +409,12 @@ def _parse_member_item(raw: Any) -> MemberItem:
         raise IdentityError("Member item is missing 'name'.")
     role_raw = raw.get("role")
     role = str(role_raw) if role_raw is not None else None
-    return MemberItem(id=mid, email=str(email), name=str(name), role=role)
+    # Older gateways omit the key; treat absent the same as null (no image).
+    image_url_raw = raw.get("image_url")
+    image_url = str(image_url_raw) if image_url_raw is not None else None
+    return MemberItem(
+        id=mid, email=str(email), name=str(name), role=role, image_url=image_url
+    )
 
 
 def _parse_paginated_members(payload: dict[str, Any]) -> PaginatedMembers:
