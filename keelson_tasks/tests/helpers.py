@@ -2,12 +2,15 @@
 
 ``FakeApi`` replaces ``keelson_tasks.client._open`` so the remote backend runs
 without network access. ``install_fake_cli`` puts an executable ``keelson`` on
-PATH that records its argv and stdin and prints a scripted stdout.
+PATH that records its argv and stdin and prints a scripted stdout. On Windows
+it is ``keelson.cmd`` (``shutil.which`` only finds PATHEXT names there) running
+the same Python body.
 """
 
 from __future__ import annotations
 
 import json
+import os
 import stat
 import sys
 from email.message import Message
@@ -128,8 +131,7 @@ def no_sleep(monkeypatch) -> list[float]:
     return slept
 
 
-_FAKE_CLI = """#!{python}
-import json, os, sys, uuid
+_FAKE_CLI = """import json, os, sys, uuid
 stdin = sys.stdin.buffer.read()
 with open(os.environ["FAKE_KEELSON_LOG"], "a", encoding="utf-8") as log:
     log.write(json.dumps({{"argv": sys.argv[1:], "stdin": stdin.decode("utf-8"),
@@ -141,9 +143,18 @@ sys.exit(int(os.environ.get("FAKE_KEELSON_EXIT", "0")))
 """
 
 
+# Windows runs a .cmd through cmd.exe; it hands stdin/stdout/stderr and the
+# exit code of the Python body straight through.
+_FAKE_CLI_CMD = '@"{python}" "%~dp0keelson.py" %*\r\n@exit /b %ERRORLEVEL%\r\n'
+
+
 class FakeCli:
     def __init__(self, root: Path) -> None:
         self.bin_dir = root / "bin"
+        # The file `shutil.which("keelson")` resolves to.
+        self.executable = self.bin_dir / (
+            "keelson.cmd" if os.name == "nt" else "keelson"
+        )
         self.log = root / "cli.log"
         self.stdout_file = root / "cli.stdout"
 
@@ -189,9 +200,16 @@ def task_result(
 def install_fake_cli(monkeypatch, root: Path, stdout: object | None = None) -> FakeCli:
     fake = FakeCli(root)
     fake.bin_dir.mkdir(parents=True, exist_ok=True)
-    script = fake.bin_dir / "keelson"
-    script.write_text(_FAKE_CLI.format(python=sys.executable), encoding="utf-8")
-    script.chmod(script.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    body = _FAKE_CLI.format()
+    if os.name == "nt":
+        (fake.bin_dir / "keelson.py").write_text(body, encoding="utf-8")
+        fake.executable.write_text(
+            _FAKE_CLI_CMD.format(python=sys.executable), encoding="utf-8", newline=""
+        )
+    else:
+        script = fake.executable
+        script.write_text(f"#!{sys.executable}\n{body}", encoding="utf-8")
+        script.chmod(script.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
     fake.set_stdout(stdout if stdout is not None else task_result())
     monkeypatch.setenv("PATH", str(fake.bin_dir))
     monkeypatch.setenv("FAKE_KEELSON_LOG", str(fake.log))

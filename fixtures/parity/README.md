@@ -293,6 +293,68 @@ output to the key sets; the SDK tests use each case as a fake CLI's stdout.
 
 The SDK decides from stdout alone, never from the CLI's exit code.
 
+### `identity_local_roster.json`
+
+Local-roster contract for the identity SDKs' local mode (`KEELSON_LOCAL_MODE`
+with a users file) and for the `keelson dev serve` Directory mock. Both build
+the same values from the same roster, so the SDK tests compare local-mode
+results and the CLI tests compare mock HTTP responses against this file.
+Every test first clears `env_vars`, writes `roster` to a temporary file, and
+points `KEELSON_LOCAL_USERS_FILE` at it (and runs where no
+`./.keelson/dev-users.json` exists).
+
+| Field | Type | Parity assertion |
+| --- | --- | --- |
+| `roster` | object | the users-file content (contains a non-ASCII name, an unknown key, unordered `perms`, an empty email, and a `null` / absent / URL `image_url`) |
+| `fixed_user_id` | string | the fixed local user: the first user whose `perms` include `manage`, else the first user |
+| `current_user` | object | `getCurrentUser` in local mode (`id` / `email` / `name`) |
+| `request_user` | object | `getRequestUser` in local mode; `perms` normalized to `["view", "manage"]` |
+| `identities[user_id]` | object | `GET /__keelson/users/{id}/identity` (mock: the whole object, `authz.version` `1` required) / `getCurrentIdentity` for the fixed user (SDK: only `identity_compared_fields`; SDK types are not extended for `authz`). `app.permissions` is code-point sorted, `roles` is `[]`, `role` is `ADMIN` with `manage` else `APP_USER` |
+| `identity_compared_fields[]` | string | the top-level identity fields SDK tests compare |
+| `workspace_id_cases[].env` / `.expected_workspace_id` | object / string | with the roster set, `workspace.id` follows the existing order `KEELSON_LOCAL_WORKSPACE_ID` → legacy `KEELSON_LOCAL_TENANT_ID` → `local-tenant-001` |
+| `list_members[].query` / `.response` | object | `listMembers(query)` returns `response` (roster order, `q` case-insensitive on name or email, `group_key` `everyone` / `admins`, paging) |
+| `list_members[].error` | `invalid_request` | `group_key` + `group_id` together: SDK raises client-side, the mock returns 400 |
+| `get_user[].user_id` / `.response` / `.error` | string / object / `not_found` | `getUser`; an id outside the roster is the existing local-mode 404 error |
+| `groups` | object | `listGroups` returns `groups.items` exactly (`admins` then `everyone`) |
+| `fixed_user_cases[].roster` / `.expected_user_id` | object / string | fixed-user (SDK) and default-user (CLI) selection |
+| `builtin_roster` / `builtin_default_user_id` | object / string | the four users the CLI bundles when no users file is given |
+| `invalid_rosters[].roster` / `.text` | JSON / string | a users file the SDK rejects with `IdentityError` (Go: an error from `New`) and the CLI rejects before starting. `text` is raw file content that is not valid JSON |
+| `invalid_rosters[].reason` | string | informational |
+
+### `identity_request_user.json`
+
+`getRequestUser` / `get_request_user` / `GetRequestUser`: trusted headers →
+`{ id, email, name, perms }`.
+
+| Field | Type | Parity assertion |
+| --- | --- | --- |
+| `env_vars[]` | string | cleared before every case |
+| `header_cases[].headers` | object | incoming request headers (local mode off) |
+| `header_cases[].expected` | object | the result. `perms` splits `X-Keelson-User-App-Perms` on `,`, trims, drops empty items, keeps order and values; a missing header is `[]`; blank email / name is `null` |
+| `header_cases[]` non-ASCII cases | object | `non_ascii_name_as_utf8_string` passes a Japanese name as a proper string; `non_ascii_name_as_latin1_string` passes the same name's UTF-8 bytes read as latin-1 (one character per byte, includes C1 controls), and both must return the proper name; `latin1_char_not_valid_utf8_kept` (`José`) stays unchanged |
+| `header_cases[].error` | `missing_user_id` | the same error `getCurrentUser` raises for a missing / blank `X-Keelson-User-Id` |
+| `local_cases[].env` | object | environment for the case (local mode on, except the last case) |
+| `local_cases[].users_file` | object \| absent | written to a temporary file and passed as `KEELSON_LOCAL_USERS_FILE` |
+| `local_cases[].headers` | object | ignored in local mode |
+| `local_cases[].expected` | object | the result; without a users file the legacy fixed user with `perms` `["view", "manage"]` |
+
+### `identity_local_mode_guard.json`
+
+Rejecting local mode in a Keelson deployment. A production mark is a
+non-blank `KEELSON_MODE=keelson` (trimmed, case-insensitive) or a non-blank
+`KEELSON_APP_ID` / `KEELSON_WORKSPACE_ID` / `KEELSON_TENANT_ID` /
+`KEELSON_DEPLOY_ID` / `KEELSON_APP_URL`.
+
+| Field | Type | Parity assertion |
+| --- | --- | --- |
+| `env_vars[]` | string | cleared before every case |
+| `marks_order[]` | string | the order marks are listed in error messages |
+| `message_must_contain[]` | string | substrings every rejection message contains |
+| `cases[].env` | object | the environment for the case |
+| `cases[].expected.sdk` | `local` \| `error` \| `not_local` | `local`: fixed data is returned; `error`: every local-mode identity / directory call raises `IdentityError` (Go: `identity.New` / `directory.New` return an error); `not_local`: local mode is off and the SDK reads headers as usual |
+| `cases[].expected.marks[]` | string | mark names the message contains (values are never included) |
+| `cases[].expected.cli_refuses` | bool | `keelson dev serve` exits non-zero before starting the child (any mark, regardless of `KEELSON_LOCAL_MODE`) |
+
 ## Adding a new fixture
 
 1. Create `{domain}_{name}.json` in this directory.

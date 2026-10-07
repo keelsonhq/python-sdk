@@ -53,7 +53,7 @@ logger = logging.getLogger(__name__)
 # Explicit UA: urllib's default ``Python-urllib/3.x`` is blocked by Cloudflare
 # Browser Integrity Check (Error 1010 browser_signature_banned) on the
 # ``*.keelson.run`` / ``*.keelson-stage.run`` zones. See T-0595.
-_SDK_USER_AGENT = "Keelson-Python-SDK/0.2.0"
+_SDK_USER_AGENT = "Keelson-Python-SDK/0.2.1"
 
 _WEBHOOK_PATH = "/api/webhooks/email"
 _EVENT_WEBHOOK_PATH = "/api/webhooks/email-events"

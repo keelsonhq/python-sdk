@@ -74,6 +74,12 @@ Guaranteed capability:
   `KEELSON_DIRECTORY_BASE_URL` base URL (the deprecated `KEELSON_IDENTITY_BASE_URL`
   is a compatibility fallback only and is not injected by the platform)
 - local mode support
+- request user lookup (`getRequestUser` / `get_request_user` /
+  `GetRequestUser`): the current user plus the app permissions parsed from
+  `X-Keelson-User-App-Perms` (see "Identity Local-Mode Contract")
+- local-mode refusal when a Keelson deployment is detected
+- local users file (`KEELSON_LOCAL_USERS_FILE`) for the local-mode fixed user,
+  member list, single user, groups, and full identity
 
 Intentional differences:
 
@@ -282,6 +288,9 @@ capability is part of the parity contract.
 | Directory request context forwarding (`cookie` / `authorization` / `host`) | guaranteed | Yes | Yes | Yes | Shape differs by language |
 | App-as-actor token (`app_token` / `WithAppToken` + `KEELSON_DIRECTORY_TOKEN` fallback) | guaranteed | Yes | Yes | Yes | `app_token` arg (Python/Node), `WithAppToken` option (Go) |
 | Local mode | guaranteed | Yes | Yes | Yes | |
+| Request user with app permissions (`getRequestUser` / `get_request_user` / `GetRequestUser`) | guaranteed | Yes | Yes | Yes | `identity_request_user.json` fixture |
+| Local mode refused when a Keelson deployment is detected | guaranteed | Yes | Yes | Yes | `identity_local_mode_guard.json` fixture. Go refuses in `identity.New` / `directory.New` |
+| Local users file (`KEELSON_LOCAL_USERS_FILE`) | guaranteed | Yes | Yes | Yes | `identity_local_roster.json` fixture |
 | `identity` + `directory` split package layout | intentional difference | No | No | Yes | Allowed layout difference |
 
 ### Media
@@ -342,6 +351,93 @@ None. All three SDKs strip parameters from the `Content-Type` header returned
 by `stat` / `Head` (e.g.
 `text/plain; charset=utf-8` → `text/plain`). This behavior is covered by the
 shared `media_stat.json` parity fixture.
+
+## Identity Local-Mode Contract
+
+The canonical spec is `docs/specs/local-dev-spec.md` in the Keelson monorepo;
+this section lists what the three SDKs must agree on. Local mode
+(`KEELSON_LOCAL_MODE` = `1` / `true` / `yes`) keeps its resolution order:
+when it is on, every identity / directory function returns fixed data and
+never reads headers or calls the Directory API. When it is off, nothing below
+changes the production path.
+
+### Request user
+
+`getRequestUser(options)` (Node, async, `options.headers`),
+`get_request_user(*, headers=None)` (Python), and
+`(*identity.Client).GetRequestUser(opts ...RequestOption)` (Go, `WithHeaders`)
+return the `getCurrentUser` fields plus `perms`:
+
+- Node `RequestUser = UserIdentity & { perms: string[] }`; Python frozen
+  dataclass `RequestUser(id, email, name, perms)`; Go
+  `RequestUser{ID, Email *string, Name *string, Perms []string}`.
+- `perms` splits `X-Keelson-User-App-Perms` on `,`, trims each item, drops
+  empty items, and keeps order and values. A missing or empty header gives an
+  empty list, not an error.
+- A missing or blank `X-Keelson-User-Id` raises the same error as
+  `getCurrentUser`.
+- The gateway sends non-ASCII values (e.g. a Japanese name) as raw UTF-8
+  bytes, which some frameworks hand over as a latin-1 string. For each header
+  value, if every character is U+00FF or below, at least one is U+0080 or
+  above, and its latin-1 bytes are valid UTF-8, `getRequestUser` returns the
+  UTF-8 decoding; otherwise the value is kept. `getCurrentUser` is unchanged.
+- In local mode it returns the fixed user. Without a users file that is the
+  existing fixed user (`KEELSON_LOCAL_USER_*`) with `perms` `["view", "manage"]`.
+
+### Refusal in a Keelson deployment
+
+A production mark is `KEELSON_MODE=keelson` (trimmed, case-insensitive) or a
+non-blank `KEELSON_APP_ID`, `KEELSON_WORKSPACE_ID`, `KEELSON_TENANT_ID`,
+`KEELSON_DEPLOY_ID`, or `KEELSON_APP_URL`. When local mode is on and any mark
+is present, the SDK neither returns fixed data nor silently falls back to the
+production path:
+
+| SDK | Behavior |
+| --- | --- |
+| Node | every local-mode identity / directory call rejects with `IdentityError` |
+| Python | every local-mode identity / directory call raises `IdentityError` |
+| Go | `identity.New` / `directory.New` return an error |
+
+The message contains `KEELSON_LOCAL_MODE`, the names of the marks found (in the
+order above, `KEELSON_MODE` written as `KEELSON_MODE=keelson`), and the advice
+to unset `KEELSON_LOCAL_MODE`. It never contains the values.
+
+### Local users file
+
+In local mode the SDK reads the users file named by `KEELSON_LOCAL_USERS_FILE`,
+or `./.keelson/dev-users.json` when that exists. Without either, the existing
+fixed data is unchanged. An explicitly named file that is missing, unreadable,
+or malformed is an error (the same error type as the refusal), never a silent
+fallback.
+
+```json
+{ "users": [ { "id": "...", "email": "...", "name": "...", "perms": ["view", "manage"], "image_url": null } ] }
+```
+
+- `users` is non-empty; `id` is a non-empty unique string; `email` and `name`
+  are strings (may be empty); `perms` contains `view`, only `view` / `manage`,
+  no duplicates; `image_url` is an optional string or `null`. Unknown keys are
+  ignored.
+- The fixed user is the first user whose `perms` include `manage`, else the
+  first user. Blank `email` / `name` become `null` in `getCurrentUser` /
+  `getRequestUser`.
+- With a users file, `KEELSON_LOCAL_USER_ID` / `_EMAIL` / `_NAME` and the
+  workspace-role variables are not used. The workspace id keeps its existing
+  order (`KEELSON_LOCAL_WORKSPACE_ID` → legacy `KEELSON_LOCAL_TENANT_ID` →
+  `local-tenant-001`), and `KEELSON_LOCAL_APP_ID` still applies.
+- Members keep the file order. `role` is `ADMIN` with `manage`, else
+  `APP_USER`. Groups are exactly `admins` (`local-group-admins`) and
+  `everyone` (`local-group-everyone`); `admins` holds the `manage` users.
+- Full identity: `app.permissions` is the sorted `perms`, `app.roles` is `[]`,
+  `attributes.groups` is `["admins", "everyone"]` or `["everyone"]`.
+  `authz.version` (`1`) is required in the mock's HTTP response because the Go
+  SDK rejects identities without it; SDK types are not extended, and SDK tests
+  compare only each SDK's existing public fields.
+
+The same values are served by the `keelson dev serve` Directory mock, so a
+user resolves to the same id, member, and identity with or without the CLI.
+Fixtures: `identity_local_roster.json`, `identity_request_user.json`,
+`identity_local_mode_guard.json`.
 
 ## Media Runtime-Mode Contract
 

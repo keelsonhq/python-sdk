@@ -812,13 +812,13 @@ class TestUserAgentHeader:
         captured, mock = _capture_request(_EMPTY_MEMBERS)
         with mock:
             list_members(base_url="http://test", app_token="keelson_xyz")
-        assert captured[0].get_header("User-agent") == "Keelson-Python-SDK/0.2.0"
+        assert captured[0].get_header("User-agent") == "Keelson-Python-SDK/0.2.1"
 
     def test_cookie_auth_also_sends_sdk_user_agent(self) -> None:
         captured, mock = _capture_request(_EMPTY_MEMBERS)
         with mock:
             list_members(base_url="http://test", cookie="sid=1")
-        assert captured[0].get_header("User-agent") == "Keelson-Python-SDK/0.2.0"
+        assert captured[0].get_header("User-agent") == "Keelson-Python-SDK/0.2.1"
 
 
 class TestAppTokenHeader:

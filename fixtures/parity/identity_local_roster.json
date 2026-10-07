@@ -1,0 +1,1001 @@
+{
+  "fixture": "identity_local_roster",
+  "env_vars": [
+    "KEELSON_LOCAL_MODE",
+    "KEELSON_LOCAL_USERS_FILE",
+    "KEELSON_LOCAL_USER_ID",
+    "KEELSON_LOCAL_USER_EMAIL",
+    "KEELSON_LOCAL_USER_NAME",
+    "KEELSON_LOCAL_WORKSPACE_ID",
+    "KEELSON_LOCAL_WORKSPACE_ROLE",
+    "KEELSON_LOCAL_TENANT_ID",
+    "KEELSON_LOCAL_TENANT_ROLE",
+    "KEELSON_LOCAL_APP_ID",
+    "KEELSON_MODE",
+    "KEELSON_APP_ID",
+    "KEELSON_WORKSPACE_ID",
+    "KEELSON_TENANT_ID",
+    "KEELSON_DEPLOY_ID",
+    "KEELSON_APP_URL"
+  ],
+  "roster": {
+    "users": [
+      {
+        "id": "sample-sato",
+        "email": "sato@example.com",
+        "name": "佐藤 花子",
+        "perms": [
+          "view"
+        ],
+        "image_url": "https://example.com/avatars/sato.png"
+      },
+      {
+        "id": "sample-tanaka",
+        "email": "Tanaka@Example.com",
+        "name": "田中 太郎",
+        "perms": [
+          "manage",
+          "view"
+        ],
+        "note": "unknown keys are ignored"
+      },
+      {
+        "id": "sample-suzuki",
+        "email": "",
+        "name": "Suzuki Ichiro",
+        "perms": [
+          "view",
+          "manage"
+        ],
+        "image_url": null
+      }
+    ]
+  },
+  "fixed_user_id": "sample-tanaka",
+  "current_user": {
+    "id": "sample-tanaka",
+    "email": "Tanaka@Example.com",
+    "name": "田中 太郎"
+  },
+  "request_user": {
+    "id": "sample-tanaka",
+    "email": "Tanaka@Example.com",
+    "name": "田中 太郎",
+    "perms": [
+      "view",
+      "manage"
+    ]
+  },
+  "identities": {
+    "sample-sato": {
+      "user": {
+        "id": "sample-sato",
+        "email": "sato@example.com",
+        "name": "佐藤 花子"
+      },
+      "workspace": {
+        "id": "local-tenant-001",
+        "role": "APP_USER"
+      },
+      "tenant": {
+        "id": "local-tenant-001",
+        "role": "APP_USER"
+      },
+      "app": {
+        "id": "local-app-001",
+        "permissions": [
+          "view"
+        ],
+        "roles": []
+      },
+      "authz": {
+        "version": 1
+      },
+      "attributes": {
+        "groups": [
+          "everyone"
+        ]
+      }
+    },
+    "sample-tanaka": {
+      "user": {
+        "id": "sample-tanaka",
+        "email": "Tanaka@Example.com",
+        "name": "田中 太郎"
+      },
+      "workspace": {
+        "id": "local-tenant-001",
+        "role": "ADMIN"
+      },
+      "tenant": {
+        "id": "local-tenant-001",
+        "role": "ADMIN"
+      },
+      "app": {
+        "id": "local-app-001",
+        "permissions": [
+          "manage",
+          "view"
+        ],
+        "roles": []
+      },
+      "authz": {
+        "version": 1
+      },
+      "attributes": {
+        "groups": [
+          "admins",
+          "everyone"
+        ]
+      }
+    },
+    "sample-suzuki": {
+      "user": {
+        "id": "sample-suzuki",
+        "email": "",
+        "name": "Suzuki Ichiro"
+      },
+      "workspace": {
+        "id": "local-tenant-001",
+        "role": "ADMIN"
+      },
+      "tenant": {
+        "id": "local-tenant-001",
+        "role": "ADMIN"
+      },
+      "app": {
+        "id": "local-app-001",
+        "permissions": [
+          "manage",
+          "view"
+        ],
+        "roles": []
+      },
+      "authz": {
+        "version": 1
+      },
+      "attributes": {
+        "groups": [
+          "admins",
+          "everyone"
+        ]
+      }
+    }
+  },
+  "list_members": [
+    {
+      "name": "all",
+      "query": {},
+      "response": {
+        "items": [
+          {
+            "id": "sample-sato",
+            "email": "sato@example.com",
+            "name": "佐藤 花子",
+            "role": "APP_USER",
+            "image_url": "https://example.com/avatars/sato.png"
+          },
+          {
+            "id": "sample-tanaka",
+            "email": "Tanaka@Example.com",
+            "name": "田中 太郎",
+            "role": "ADMIN",
+            "image_url": null
+          },
+          {
+            "id": "sample-suzuki",
+            "email": "",
+            "name": "Suzuki Ichiro",
+            "role": "ADMIN",
+            "image_url": null
+          }
+        ],
+        "limit": 25,
+        "offset": 0,
+        "next_offset": null
+      }
+    },
+    {
+      "name": "q_email_case_insensitive",
+      "query": {
+        "q": "tanaka@EXAMPLE"
+      },
+      "response": {
+        "items": [
+          {
+            "id": "sample-tanaka",
+            "email": "Tanaka@Example.com",
+            "name": "田中 太郎",
+            "role": "ADMIN",
+            "image_url": null
+          }
+        ],
+        "limit": 25,
+        "offset": 0,
+        "next_offset": null
+      }
+    },
+    {
+      "name": "q_name_non_ascii",
+      "query": {
+        "q": "佐藤"
+      },
+      "response": {
+        "items": [
+          {
+            "id": "sample-sato",
+            "email": "sato@example.com",
+            "name": "佐藤 花子",
+            "role": "APP_USER",
+            "image_url": "https://example.com/avatars/sato.png"
+          }
+        ],
+        "limit": 25,
+        "offset": 0,
+        "next_offset": null
+      }
+    },
+    {
+      "name": "q_name_case_insensitive",
+      "query": {
+        "q": "SUZUKI"
+      },
+      "response": {
+        "items": [
+          {
+            "id": "sample-suzuki",
+            "email": "",
+            "name": "Suzuki Ichiro",
+            "role": "ADMIN",
+            "image_url": null
+          }
+        ],
+        "limit": 25,
+        "offset": 0,
+        "next_offset": null
+      }
+    },
+    {
+      "name": "q_no_match",
+      "query": {
+        "q": "nobody"
+      },
+      "response": {
+        "items": [],
+        "limit": 25,
+        "offset": 0,
+        "next_offset": null
+      }
+    },
+    {
+      "name": "role_admin",
+      "query": {
+        "role": "ADMIN"
+      },
+      "response": {
+        "items": [
+          {
+            "id": "sample-tanaka",
+            "email": "Tanaka@Example.com",
+            "name": "田中 太郎",
+            "role": "ADMIN",
+            "image_url": null
+          },
+          {
+            "id": "sample-suzuki",
+            "email": "",
+            "name": "Suzuki Ichiro",
+            "role": "ADMIN",
+            "image_url": null
+          }
+        ],
+        "limit": 25,
+        "offset": 0,
+        "next_offset": null
+      }
+    },
+    {
+      "name": "role_app_user",
+      "query": {
+        "role": "APP_USER"
+      },
+      "response": {
+        "items": [
+          {
+            "id": "sample-sato",
+            "email": "sato@example.com",
+            "name": "佐藤 花子",
+            "role": "APP_USER",
+            "image_url": "https://example.com/avatars/sato.png"
+          }
+        ],
+        "limit": 25,
+        "offset": 0,
+        "next_offset": null
+      }
+    },
+    {
+      "name": "group_key_admins",
+      "query": {
+        "group_key": "admins"
+      },
+      "response": {
+        "items": [
+          {
+            "id": "sample-tanaka",
+            "email": "Tanaka@Example.com",
+            "name": "田中 太郎",
+            "role": "ADMIN",
+            "image_url": null
+          },
+          {
+            "id": "sample-suzuki",
+            "email": "",
+            "name": "Suzuki Ichiro",
+            "role": "ADMIN",
+            "image_url": null
+          }
+        ],
+        "limit": 25,
+        "offset": 0,
+        "next_offset": null
+      }
+    },
+    {
+      "name": "group_key_everyone",
+      "query": {
+        "group_key": "everyone"
+      },
+      "response": {
+        "items": [
+          {
+            "id": "sample-sato",
+            "email": "sato@example.com",
+            "name": "佐藤 花子",
+            "role": "APP_USER",
+            "image_url": "https://example.com/avatars/sato.png"
+          },
+          {
+            "id": "sample-tanaka",
+            "email": "Tanaka@Example.com",
+            "name": "田中 太郎",
+            "role": "ADMIN",
+            "image_url": null
+          },
+          {
+            "id": "sample-suzuki",
+            "email": "",
+            "name": "Suzuki Ichiro",
+            "role": "ADMIN",
+            "image_url": null
+          }
+        ],
+        "limit": 25,
+        "offset": 0,
+        "next_offset": null
+      }
+    },
+    {
+      "name": "group_key_unknown",
+      "query": {
+        "group_key": "developers"
+      },
+      "response": {
+        "items": [],
+        "limit": 25,
+        "offset": 0,
+        "next_offset": null
+      }
+    },
+    {
+      "name": "group_id_admins",
+      "query": {
+        "group_id": "local-group-admins"
+      },
+      "response": {
+        "items": [
+          {
+            "id": "sample-tanaka",
+            "email": "Tanaka@Example.com",
+            "name": "田中 太郎",
+            "role": "ADMIN",
+            "image_url": null
+          },
+          {
+            "id": "sample-suzuki",
+            "email": "",
+            "name": "Suzuki Ichiro",
+            "role": "ADMIN",
+            "image_url": null
+          }
+        ],
+        "limit": 25,
+        "offset": 0,
+        "next_offset": null
+      }
+    },
+    {
+      "name": "group_id_unknown",
+      "query": {
+        "group_id": "local-group-developers"
+      },
+      "response": {
+        "items": [],
+        "limit": 25,
+        "offset": 0,
+        "next_offset": null
+      }
+    },
+    {
+      "name": "page_middle",
+      "query": {
+        "limit": 1,
+        "offset": 1
+      },
+      "response": {
+        "items": [
+          {
+            "id": "sample-tanaka",
+            "email": "Tanaka@Example.com",
+            "name": "田中 太郎",
+            "role": "ADMIN",
+            "image_url": null
+          }
+        ],
+        "limit": 1,
+        "offset": 1,
+        "next_offset": 2
+      }
+    },
+    {
+      "name": "page_last",
+      "query": {
+        "limit": 2,
+        "offset": 2
+      },
+      "response": {
+        "items": [
+          {
+            "id": "sample-suzuki",
+            "email": "",
+            "name": "Suzuki Ichiro",
+            "role": "ADMIN",
+            "image_url": null
+          }
+        ],
+        "limit": 2,
+        "offset": 2,
+        "next_offset": null
+      }
+    },
+    {
+      "name": "group_key_and_group_id",
+      "query": {
+        "group_key": "admins",
+        "group_id": "local-group-admins"
+      },
+      "error": "invalid_request"
+    }
+  ],
+  "get_user": [
+    {
+      "user_id": "sample-sato",
+      "response": {
+        "id": "sample-sato",
+        "email": "sato@example.com",
+        "name": "佐藤 花子",
+        "role": "APP_USER",
+        "image_url": "https://example.com/avatars/sato.png"
+      }
+    },
+    {
+      "user_id": "sample-tanaka",
+      "response": {
+        "id": "sample-tanaka",
+        "email": "Tanaka@Example.com",
+        "name": "田中 太郎",
+        "role": "ADMIN",
+        "image_url": null
+      }
+    },
+    {
+      "user_id": "sample-suzuki",
+      "response": {
+        "id": "sample-suzuki",
+        "email": "",
+        "name": "Suzuki Ichiro",
+        "role": "ADMIN",
+        "image_url": null
+      }
+    },
+    {
+      "user_id": "local-user-001",
+      "error": "not_found"
+    }
+  ],
+  "groups": {
+    "items": [
+      {
+        "id": "local-group-admins",
+        "key": "admins",
+        "display_name": "Admins",
+        "kind": "SYSTEM",
+        "system_kind": "admins"
+      },
+      {
+        "id": "local-group-everyone",
+        "key": "everyone",
+        "display_name": "Everyone",
+        "kind": "SYSTEM",
+        "system_kind": "everyone"
+      }
+    ]
+  },
+  "fixed_user_cases": [
+    {
+      "name": "first_manage_is_not_first_user",
+      "roster": {
+        "users": [
+          {
+            "id": "sample-sato",
+            "email": "sato@example.com",
+            "name": "佐藤 花子",
+            "perms": [
+              "view"
+            ],
+            "image_url": "https://example.com/avatars/sato.png"
+          },
+          {
+            "id": "sample-tanaka",
+            "email": "Tanaka@Example.com",
+            "name": "田中 太郎",
+            "perms": [
+              "manage",
+              "view"
+            ],
+            "note": "unknown keys are ignored"
+          },
+          {
+            "id": "sample-suzuki",
+            "email": "",
+            "name": "Suzuki Ichiro",
+            "perms": [
+              "view",
+              "manage"
+            ],
+            "image_url": null
+          }
+        ]
+      },
+      "expected_user_id": "sample-tanaka"
+    },
+    {
+      "name": "no_manage_falls_back_to_first",
+      "roster": {
+        "users": [
+          {
+            "id": "a",
+            "email": "a@example.com",
+            "name": "A",
+            "perms": [
+              "view"
+            ]
+          },
+          {
+            "id": "b",
+            "email": "b@example.com",
+            "name": "B",
+            "perms": [
+              "view"
+            ]
+          }
+        ]
+      },
+      "expected_user_id": "a"
+    },
+    {
+      "name": "several_manage_takes_first",
+      "roster": {
+        "users": [
+          {
+            "id": "a",
+            "email": "a@example.com",
+            "name": "A",
+            "perms": [
+              "view"
+            ]
+          },
+          {
+            "id": "b",
+            "email": "b@example.com",
+            "name": "B",
+            "perms": [
+              "view",
+              "manage"
+            ]
+          },
+          {
+            "id": "c",
+            "email": "c@example.com",
+            "name": "C",
+            "perms": [
+              "view",
+              "manage"
+            ]
+          }
+        ]
+      },
+      "expected_user_id": "b"
+    },
+    {
+      "name": "builtin_roster",
+      "roster": {
+        "users": [
+          {
+            "id": "local-user-001",
+            "email": "dev@localhost",
+            "name": "Local Developer",
+            "perms": [
+              "view",
+              "manage"
+            ]
+          },
+          {
+            "id": "local-user-002",
+            "email": "alice@localhost",
+            "name": "Alice (local)",
+            "perms": [
+              "view",
+              "manage"
+            ]
+          },
+          {
+            "id": "local-user-003",
+            "email": "bob@localhost",
+            "name": "Bob (local)",
+            "perms": [
+              "view"
+            ]
+          },
+          {
+            "id": "local-user-004",
+            "email": "carol@localhost",
+            "name": "Carol (local)",
+            "perms": [
+              "view"
+            ]
+          }
+        ]
+      },
+      "expected_user_id": "local-user-001"
+    }
+  ],
+  "identity_compared_fields": [
+    "user",
+    "workspace",
+    "tenant",
+    "app",
+    "attributes"
+  ],
+  "workspace_id_cases": [
+    {
+      "name": "default",
+      "env": {},
+      "expected_workspace_id": "local-tenant-001"
+    },
+    {
+      "name": "legacy_tenant_id",
+      "env": {
+        "KEELSON_LOCAL_TENANT_ID": "legacy-ws"
+      },
+      "expected_workspace_id": "legacy-ws"
+    },
+    {
+      "name": "workspace_id_wins",
+      "env": {
+        "KEELSON_LOCAL_WORKSPACE_ID": "new-ws",
+        "KEELSON_LOCAL_TENANT_ID": "legacy-ws"
+      },
+      "expected_workspace_id": "new-ws"
+    }
+  ],
+  "builtin_roster": {
+    "users": [
+      {
+        "id": "local-user-001",
+        "email": "dev@localhost",
+        "name": "Local Developer",
+        "perms": [
+          "view",
+          "manage"
+        ]
+      },
+      {
+        "id": "local-user-002",
+        "email": "alice@localhost",
+        "name": "Alice (local)",
+        "perms": [
+          "view",
+          "manage"
+        ]
+      },
+      {
+        "id": "local-user-003",
+        "email": "bob@localhost",
+        "name": "Bob (local)",
+        "perms": [
+          "view"
+        ]
+      },
+      {
+        "id": "local-user-004",
+        "email": "carol@localhost",
+        "name": "Carol (local)",
+        "perms": [
+          "view"
+        ]
+      }
+    ]
+  },
+  "builtin_default_user_id": "local-user-001",
+  "invalid_rosters": [
+    {
+      "reason": "not_json",
+      "text": "{\"users\": ["
+    },
+    {
+      "reason": "not_object",
+      "roster": []
+    },
+    {
+      "reason": "users_missing",
+      "roster": {}
+    },
+    {
+      "reason": "users_not_array",
+      "roster": {
+        "users": {}
+      }
+    },
+    {
+      "reason": "users_empty",
+      "roster": {
+        "users": []
+      }
+    },
+    {
+      "reason": "user_not_object",
+      "roster": {
+        "users": [
+          "x"
+        ]
+      }
+    },
+    {
+      "reason": "id_missing",
+      "roster": {
+        "users": [
+          {
+            "email": "x@example.com",
+            "name": "X",
+            "perms": [
+              "view"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "reason": "id_empty",
+      "roster": {
+        "users": [
+          {
+            "id": "",
+            "email": "x@example.com",
+            "name": "X",
+            "perms": [
+              "view"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "reason": "id_not_string",
+      "roster": {
+        "users": [
+          {
+            "id": 1,
+            "email": "x@example.com",
+            "name": "X",
+            "perms": [
+              "view"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "reason": "id_duplicate",
+      "roster": {
+        "users": [
+          {
+            "id": "ok",
+            "email": "ok@example.com",
+            "name": "OK",
+            "perms": [
+              "view"
+            ]
+          },
+          {
+            "id": "ok",
+            "email": "ok@example.com",
+            "name": "OK",
+            "perms": [
+              "view"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "reason": "email_missing",
+      "roster": {
+        "users": [
+          {
+            "id": "x",
+            "name": "X",
+            "perms": [
+              "view"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "reason": "email_not_string",
+      "roster": {
+        "users": [
+          {
+            "id": "x",
+            "email": null,
+            "name": "X",
+            "perms": [
+              "view"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "reason": "name_missing",
+      "roster": {
+        "users": [
+          {
+            "id": "x",
+            "email": "x@example.com",
+            "perms": [
+              "view"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "reason": "name_not_string",
+      "roster": {
+        "users": [
+          {
+            "id": "x",
+            "email": "x@example.com",
+            "name": null,
+            "perms": [
+              "view"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "reason": "perms_missing",
+      "roster": {
+        "users": [
+          {
+            "id": "x",
+            "email": "x@example.com",
+            "name": "X"
+          }
+        ]
+      }
+    },
+    {
+      "reason": "perms_not_array",
+      "roster": {
+        "users": [
+          {
+            "id": "x",
+            "email": "x@example.com",
+            "name": "X",
+            "perms": "view"
+          }
+        ]
+      }
+    },
+    {
+      "reason": "perms_empty",
+      "roster": {
+        "users": [
+          {
+            "id": "x",
+            "email": "x@example.com",
+            "name": "X",
+            "perms": []
+          }
+        ]
+      }
+    },
+    {
+      "reason": "perms_without_view",
+      "roster": {
+        "users": [
+          {
+            "id": "x",
+            "email": "x@example.com",
+            "name": "X",
+            "perms": [
+              "manage"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "reason": "perms_unknown_value",
+      "roster": {
+        "users": [
+          {
+            "id": "x",
+            "email": "x@example.com",
+            "name": "X",
+            "perms": [
+              "view",
+              "admin"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "reason": "perms_duplicate",
+      "roster": {
+        "users": [
+          {
+            "id": "x",
+            "email": "x@example.com",
+            "name": "X",
+            "perms": [
+              "view",
+              "view"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "reason": "image_url_not_string",
+      "roster": {
+        "users": [
+          {
+            "id": "x",
+            "email": "x@example.com",
+            "name": "X",
+            "perms": [
+              "view"
+            ],
+            "image_url": 42
+          }
+        ]
+      }
+    }
+  ]
+}

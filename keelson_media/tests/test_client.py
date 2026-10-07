@@ -221,7 +221,7 @@ class TestKeelsonModeStat:
         assert "Bearer test-token" in captured_requests[0].get_header("Authorization")
         assert (
             captured_requests[0].get_header("User-agent")
-            == "Keelson-Python-SDK/0.2.0"
+            == "Keelson-Python-SDK/0.2.1"
         )
 
     def test_stat_keelson_strips_charset(self, monkeypatch) -> None:

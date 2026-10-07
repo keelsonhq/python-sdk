@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import os
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 from urllib.error import HTTPError, URLError
@@ -13,7 +13,7 @@ from urllib.request import Request, urlopen
 # Explicit UA: urllib's default ``Python-urllib/3.x`` is blocked by Cloudflare
 # Browser Integrity Check (Error 1010 browser_signature_banned) on the
 # ``*.keelson.run`` / ``*.keelson-stage.run`` zones. See T-0595.
-_SDK_USER_AGENT = "Keelson-Python-SDK/0.2.0"
+_SDK_USER_AGENT = "Keelson-Python-SDK/0.2.1"
 
 
 class IdentityError(RuntimeError):
@@ -25,6 +25,16 @@ class UserIdentity:
     id: str
     email: str | None
     name: str | None
+
+
+@dataclass(frozen=True)
+class RequestUser:
+    """The current user plus the app permissions from ``X-Keelson-User-App-Perms``."""
+
+    id: str
+    email: str | None
+    name: str | None
+    perms: list[str]
 
 
 @dataclass(frozen=True)
@@ -208,13 +218,13 @@ def _parse_identity(payload: dict[str, Any]) -> CurrentIdentity:
     )
 
 
-def _normalize_header_value(value: Any) -> str | None:
+def _normalize_header_value(value: Any, decode: Callable[[str], str] = str) -> str | None:
     if isinstance(value, str):
-        text = value.strip()
+        text = decode(value).strip()
         return text or None
     if isinstance(value, Sequence) and not isinstance(value, (bytes, bytearray, str)):
         for item in value:
-            normalized = _normalize_header_value(item)
+            normalized = _normalize_header_value(item, decode)
             if normalized:
                 return normalized
         return None
@@ -224,13 +234,17 @@ def _normalize_header_value(value: Any) -> str | None:
     return text or None
 
 
-def _read_header(headers: Any, name: str) -> str | None:
+def _read_header(headers: Any, name: str, decode: Callable[[str], str] = str) -> str | None:
+    """Read one header value, trimmed; blank is None.
+
+    *decode* is applied to the raw string before trimming.
+    """
     if headers is None:
         return None
 
     getter = getattr(headers, "get", None)
     if callable(getter):
-        value = _normalize_header_value(getter(name))
+        value = _normalize_header_value(getter(name), decode)
         if value:
             return value
 
@@ -238,7 +252,7 @@ def _read_header(headers: Any, name: str) -> str | None:
         lower_name = name.lower()
         for key, value in headers.items():
             if str(key).lower() == lower_name:
-                return _normalize_header_value(value)
+                return _normalize_header_value(value, decode)
 
     return None
 
@@ -260,13 +274,56 @@ def get_current_user(
     base_url: str | None = None,
     timeout_sec: float = 5.0,
 ) -> UserIdentity:
-    from .local import is_local_mode, local_get_current_user
+    from .local import _use_local_mode, local_get_current_user
 
-    if is_local_mode():
+    if _use_local_mode():
         return local_get_current_user()
 
     _ = (base_url, timeout_sec)
     return _parse_current_user_headers(headers)
+
+
+def _recover_utf8(value: str) -> str:
+    """Re-decode a header value that arrived as UTF-8 bytes read as latin-1.
+
+    The gateway sends non-ASCII values (e.g. a Japanese name) as raw UTF-8
+    bytes, which some frameworks hand over one byte per character.
+    """
+    if all(ord(c) <= 0xFF for c in value) and any(ord(c) >= 0x80 for c in value):
+        try:
+            return value.encode("latin-1").decode("utf-8")
+        except UnicodeDecodeError:
+            return value
+    return value
+
+
+def _read_request_header(headers: Any, name: str) -> str | None:
+    # Recover before trimming: a UTF-8 trailing byte 0xA0 reads as latin-1 NBSP,
+    # which strip() would otherwise remove.
+    return _read_header(headers, name, _recover_utf8)
+
+
+def get_request_user(*, headers: Any = None) -> RequestUser:
+    """Return the current user and its app permissions from the trusted headers.
+
+    ``perms`` is ``X-Keelson-User-App-Perms`` split on ``,`` (trimmed, empty
+    items dropped, order kept); a missing header gives ``[]``. No network call.
+    """
+    from .local import _use_local_mode, local_get_request_user
+
+    if _use_local_mode():
+        return local_get_request_user()
+
+    user_id = _read_request_header(headers, "x-keelson-user-id")
+    if not user_id:
+        raise IdentityError("Current user headers are missing 'x-keelson-user-id'.")
+    perms_raw = _read_request_header(headers, "x-keelson-user-app-perms") or ""
+    return RequestUser(
+        id=user_id,
+        email=_read_request_header(headers, "x-keelson-user-email"),
+        name=_read_request_header(headers, "x-keelson-user-name"),
+        perms=[p.strip() for p in perms_raw.split(",") if p.strip()],
+    )
 
 
 def _resolve_current_identity_authorization(
@@ -295,9 +352,9 @@ def get_current_identity(
     host: str | None = None,
     timeout_sec: float = 5.0,
 ) -> CurrentIdentity:
-    from .local import is_local_mode, local_get_current_identity
+    from .local import _use_local_mode, local_get_current_identity
 
-    if is_local_mode():
+    if _use_local_mode():
         return local_get_current_identity()
 
     user = _parse_current_user_headers(headers)
@@ -495,14 +552,14 @@ def list_members(
     are stable and immutable. ``group_id`` is the UUID for machine integration
     / internal use. Passing both raises :class:`IdentityError`.
     """
-    from .local import is_local_mode, local_list_members
+    from .local import _use_local_mode, local_list_members
 
     if group_key is not None and group_id is not None:
         # The Directory API rejects naming the same group two ways; fail
         # fast client-side so local mode behaves identically.
         raise IdentityError("Specify only one of group_id or group_key.")
 
-    if is_local_mode():
+    if _use_local_mode():
         return local_list_members(
             limit=limit,
             offset=offset,
@@ -548,9 +605,9 @@ def get_user(
     host: str | None = None,
     timeout_sec: float = 5.0,
 ) -> MemberItem:
-    from .local import is_local_mode, local_get_user
+    from .local import _use_local_mode, local_get_user
 
-    if is_local_mode():
+    if _use_local_mode():
         return local_get_user(user_id)
 
     resolved_auth = _resolve_authorization(
@@ -576,9 +633,9 @@ def list_groups(
     host: str | None = None,
     timeout_sec: float = 5.0,
 ) -> list[GroupItem]:
-    from .local import is_local_mode, local_list_groups
+    from .local import _use_local_mode, local_list_groups
 
-    if is_local_mode():
+    if _use_local_mode():
         return local_list_groups()
 
     resolved_auth = _resolve_authorization(

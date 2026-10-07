@@ -1,0 +1,441 @@
+{
+  "fixture": "identity_request_user",
+  "env_vars": [
+    "KEELSON_LOCAL_MODE",
+    "KEELSON_LOCAL_USERS_FILE",
+    "KEELSON_LOCAL_USER_ID",
+    "KEELSON_LOCAL_USER_EMAIL",
+    "KEELSON_LOCAL_USER_NAME",
+    "KEELSON_LOCAL_WORKSPACE_ID",
+    "KEELSON_LOCAL_WORKSPACE_ROLE",
+    "KEELSON_LOCAL_TENANT_ID",
+    "KEELSON_LOCAL_TENANT_ROLE",
+    "KEELSON_LOCAL_APP_ID",
+    "KEELSON_MODE",
+    "KEELSON_APP_ID",
+    "KEELSON_WORKSPACE_ID",
+    "KEELSON_TENANT_ID",
+    "KEELSON_DEPLOY_ID",
+    "KEELSON_APP_URL"
+  ],
+  "header_cases": [
+    {
+      "name": "admin",
+      "headers": {
+        "x-keelson-user-id": "7b0c3c1e-4c55-4a8e-9a43-0b7e5f4b2a10",
+        "x-keelson-user-email": "tanaka@example.com",
+        "x-keelson-user-name": "Tanaka",
+        "x-keelson-user-app-perms": "view,manage"
+      },
+      "expected": {
+        "id": "7b0c3c1e-4c55-4a8e-9a43-0b7e5f4b2a10",
+        "email": "tanaka@example.com",
+        "name": "Tanaka",
+        "perms": [
+          "view",
+          "manage"
+        ]
+      }
+    },
+    {
+      "name": "view_only",
+      "headers": {
+        "x-keelson-user-id": "u-2",
+        "x-keelson-user-email": "sato@example.com",
+        "x-keelson-user-name": "Sato",
+        "x-keelson-user-app-perms": "view"
+      },
+      "expected": {
+        "id": "u-2",
+        "email": "sato@example.com",
+        "name": "Sato",
+        "perms": [
+          "view"
+        ]
+      }
+    },
+    {
+      "name": "perms_header_missing",
+      "headers": {
+        "x-keelson-user-id": "u-3",
+        "x-keelson-user-email": "a@example.com",
+        "x-keelson-user-name": "A"
+      },
+      "expected": {
+        "id": "u-3",
+        "email": "a@example.com",
+        "name": "A",
+        "perms": []
+      }
+    },
+    {
+      "name": "perms_header_empty",
+      "headers": {
+        "x-keelson-user-id": "u-4",
+        "x-keelson-user-email": "a@example.com",
+        "x-keelson-user-name": "A",
+        "x-keelson-user-app-perms": ""
+      },
+      "expected": {
+        "id": "u-4",
+        "email": "a@example.com",
+        "name": "A",
+        "perms": []
+      }
+    },
+    {
+      "name": "perms_whitespace_trimmed",
+      "headers": {
+        "x-keelson-user-id": "u-5",
+        "x-keelson-user-email": "a@example.com",
+        "x-keelson-user-name": "A",
+        "x-keelson-user-app-perms": " view , manage "
+      },
+      "expected": {
+        "id": "u-5",
+        "email": "a@example.com",
+        "name": "A",
+        "perms": [
+          "view",
+          "manage"
+        ]
+      }
+    },
+    {
+      "name": "perms_empty_segment_dropped",
+      "headers": {
+        "x-keelson-user-id": "u-6",
+        "x-keelson-user-email": "a@example.com",
+        "x-keelson-user-name": "A",
+        "x-keelson-user-app-perms": "view,,manage,"
+      },
+      "expected": {
+        "id": "u-6",
+        "email": "a@example.com",
+        "name": "A",
+        "perms": [
+          "view",
+          "manage"
+        ]
+      }
+    },
+    {
+      "name": "perms_order_and_values_kept",
+      "headers": {
+        "x-keelson-user-id": "u-7",
+        "x-keelson-user-email": "a@example.com",
+        "x-keelson-user-name": "A",
+        "x-keelson-user-app-perms": "manage,view,audit"
+      },
+      "expected": {
+        "id": "u-7",
+        "email": "a@example.com",
+        "name": "A",
+        "perms": [
+          "manage",
+          "view",
+          "audit"
+        ]
+      }
+    },
+    {
+      "name": "email_name_missing",
+      "headers": {
+        "x-keelson-user-id": "u-8",
+        "x-keelson-user-app-perms": "view"
+      },
+      "expected": {
+        "id": "u-8",
+        "email": null,
+        "name": null,
+        "perms": [
+          "view"
+        ]
+      }
+    },
+    {
+      "name": "email_name_blank",
+      "headers": {
+        "x-keelson-user-id": "u-9",
+        "x-keelson-user-email": "  ",
+        "x-keelson-user-name": "",
+        "x-keelson-user-app-perms": "view"
+      },
+      "expected": {
+        "id": "u-9",
+        "email": null,
+        "name": null,
+        "perms": [
+          "view"
+        ]
+      }
+    },
+    {
+      "name": "header_names_case_insensitive",
+      "headers": {
+        "X-Keelson-User-Id": "u-10",
+        "X-Keelson-User-Email": "b@example.com",
+        "X-Keelson-User-Name": "B",
+        "X-Keelson-User-App-Perms": "view,manage"
+      },
+      "expected": {
+        "id": "u-10",
+        "email": "b@example.com",
+        "name": "B",
+        "perms": [
+          "view",
+          "manage"
+        ]
+      }
+    },
+    {
+      "name": "non_ascii_name_as_utf8_string",
+      "headers": {
+        "x-keelson-user-id": "u-11",
+        "x-keelson-user-email": "tanaka@example.com",
+        "x-keelson-user-name": "田中 太郎",
+        "x-keelson-user-app-perms": "view"
+      },
+      "expected": {
+        "id": "u-11",
+        "email": "tanaka@example.com",
+        "name": "田中 太郎",
+        "perms": [
+          "view"
+        ]
+      }
+    },
+    {
+      "name": "non_ascii_name_as_latin1_string",
+      "headers": {
+        "x-keelson-user-id": "u-12",
+        "x-keelson-user-email": "tanaka@example.com",
+        "x-keelson-user-name": "ç°ä¸­ å¤ªé",
+        "x-keelson-user-app-perms": "view"
+      },
+      "expected": {
+        "id": "u-12",
+        "email": "tanaka@example.com",
+        "name": "田中 太郎",
+        "perms": [
+          "view"
+        ]
+      }
+    },
+    {
+      "name": "latin1_char_not_valid_utf8_kept",
+      "headers": {
+        "x-keelson-user-id": "u-13",
+        "x-keelson-user-email": "a@example.com",
+        "x-keelson-user-name": "José",
+        "x-keelson-user-app-perms": "view"
+      },
+      "expected": {
+        "id": "u-13",
+        "email": "a@example.com",
+        "name": "José",
+        "perms": [
+          "view"
+        ]
+      }
+    },
+    {
+      "name": "user_id_missing",
+      "headers": {
+        "x-keelson-user-email": "a@example.com",
+        "x-keelson-user-name": "A",
+        "x-keelson-user-app-perms": "view,manage"
+      },
+      "error": "missing_user_id"
+    },
+    {
+      "name": "user_id_blank",
+      "headers": {
+        "x-keelson-user-id": "   ",
+        "x-keelson-user-email": "a@example.com",
+        "x-keelson-user-name": "A",
+        "x-keelson-user-app-perms": "view"
+      },
+      "error": "missing_user_id"
+    }
+  ],
+  "local_cases": [
+    {
+      "name": "no_roster_default",
+      "env": {
+        "KEELSON_LOCAL_MODE": "1"
+      },
+      "headers": {
+        "x-keelson-user-id": "header-user",
+        "x-keelson-user-email": "h@example.com",
+        "x-keelson-user-name": "Header",
+        "x-keelson-user-app-perms": "view"
+      },
+      "expected": {
+        "id": "local-user-001",
+        "email": "dev@localhost",
+        "name": "Local Developer",
+        "perms": [
+          "view",
+          "manage"
+        ]
+      }
+    },
+    {
+      "name": "no_roster_env_override",
+      "env": {
+        "KEELSON_LOCAL_MODE": "true",
+        "KEELSON_LOCAL_USER_ID": "dev-9",
+        "KEELSON_LOCAL_USER_NAME": "Nine"
+      },
+      "headers": {},
+      "expected": {
+        "id": "dev-9",
+        "email": "dev@localhost",
+        "name": "Nine",
+        "perms": [
+          "view",
+          "manage"
+        ]
+      }
+    },
+    {
+      "name": "roster_first_manage",
+      "env": {
+        "KEELSON_LOCAL_MODE": "yes"
+      },
+      "users_file": {
+        "users": [
+          {
+            "id": "sample-sato",
+            "email": "sato@example.com",
+            "name": "佐藤 花子",
+            "perms": [
+              "view"
+            ]
+          },
+          {
+            "id": "sample-tanaka",
+            "email": "tanaka@example.com",
+            "name": "田中 太郎",
+            "perms": [
+              "view",
+              "manage"
+            ]
+          }
+        ]
+      },
+      "headers": {
+        "x-keelson-user-id": "header-user",
+        "x-keelson-user-email": "h@example.com",
+        "x-keelson-user-name": "Header",
+        "x-keelson-user-app-perms": "view"
+      },
+      "expected": {
+        "id": "sample-tanaka",
+        "email": "tanaka@example.com",
+        "name": "田中 太郎",
+        "perms": [
+          "view",
+          "manage"
+        ]
+      }
+    },
+    {
+      "name": "roster_ignores_local_user_env",
+      "env": {
+        "KEELSON_LOCAL_MODE": "1",
+        "KEELSON_LOCAL_USER_ID": "dev-9"
+      },
+      "users_file": {
+        "users": [
+          {
+            "id": "sample-sato",
+            "email": "sato@example.com",
+            "name": "佐藤 花子",
+            "perms": [
+              "view"
+            ]
+          }
+        ]
+      },
+      "headers": {},
+      "expected": {
+        "id": "sample-sato",
+        "email": "sato@example.com",
+        "name": "佐藤 花子",
+        "perms": [
+          "view"
+        ]
+      }
+    },
+    {
+      "name": "roster_blank_email_name_is_null",
+      "env": {
+        "KEELSON_LOCAL_MODE": "1"
+      },
+      "users_file": {
+        "users": [
+          {
+            "id": "blank",
+            "email": "",
+            "name": " ",
+            "perms": [
+              "view",
+              "manage"
+            ]
+          }
+        ]
+      },
+      "headers": {},
+      "expected": {
+        "id": "blank",
+        "email": null,
+        "name": null,
+        "perms": [
+          "view",
+          "manage"
+        ]
+      }
+    },
+    {
+      "name": "users_file_ignored_outside_local_mode",
+      "env": {},
+      "users_file": {
+        "users": [
+          {
+            "id": "sample-sato",
+            "email": "sato@example.com",
+            "name": "佐藤 花子",
+            "perms": [
+              "view"
+            ]
+          },
+          {
+            "id": "sample-tanaka",
+            "email": "tanaka@example.com",
+            "name": "田中 太郎",
+            "perms": [
+              "view",
+              "manage"
+            ]
+          }
+        ]
+      },
+      "headers": {
+        "x-keelson-user-id": "u-1",
+        "x-keelson-user-email": "a@example.com",
+        "x-keelson-user-name": "A",
+        "x-keelson-user-app-perms": "view"
+      },
+      "expected": {
+        "id": "u-1",
+        "email": "a@example.com",
+        "name": "A",
+        "perms": [
+          "view"
+        ]
+      }
+    }
+  ]
+}

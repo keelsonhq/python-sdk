@@ -1,0 +1,211 @@
+{
+  "fixture": "identity_local_mode_guard",
+  "env_vars": [
+    "KEELSON_LOCAL_MODE",
+    "KEELSON_LOCAL_USERS_FILE",
+    "KEELSON_MODE",
+    "KEELSON_APP_ID",
+    "KEELSON_WORKSPACE_ID",
+    "KEELSON_TENANT_ID",
+    "KEELSON_DEPLOY_ID",
+    "KEELSON_APP_URL"
+  ],
+  "marks_order": [
+    "KEELSON_MODE=keelson",
+    "KEELSON_APP_ID",
+    "KEELSON_WORKSPACE_ID",
+    "KEELSON_TENANT_ID",
+    "KEELSON_DEPLOY_ID",
+    "KEELSON_APP_URL"
+  ],
+  "message_must_contain": [
+    "KEELSON_LOCAL_MODE"
+  ],
+  "cases": [
+    {
+      "name": "local_only",
+      "env": {
+        "KEELSON_LOCAL_MODE": "1"
+      },
+      "expected": {
+        "sdk": "local",
+        "cli_refuses": false
+      }
+    },
+    {
+      "name": "local_with_mode_local",
+      "env": {
+        "KEELSON_LOCAL_MODE": "1",
+        "KEELSON_MODE": "local"
+      },
+      "expected": {
+        "sdk": "local",
+        "cli_refuses": false
+      }
+    },
+    {
+      "name": "local_with_mode_keelson",
+      "env": {
+        "KEELSON_LOCAL_MODE": "1",
+        "KEELSON_MODE": "keelson"
+      },
+      "expected": {
+        "sdk": "error",
+        "cli_refuses": true,
+        "marks": [
+          "KEELSON_MODE=keelson"
+        ]
+      }
+    },
+    {
+      "name": "local_with_mode_keelson_mixed_case",
+      "env": {
+        "KEELSON_LOCAL_MODE": "true",
+        "KEELSON_MODE": " Keelson "
+      },
+      "expected": {
+        "sdk": "error",
+        "cli_refuses": true,
+        "marks": [
+          "KEELSON_MODE=keelson"
+        ]
+      }
+    },
+    {
+      "name": "local_with_app_id",
+      "env": {
+        "KEELSON_LOCAL_MODE": "1",
+        "KEELSON_APP_ID": "app-1"
+      },
+      "expected": {
+        "sdk": "error",
+        "cli_refuses": true,
+        "marks": [
+          "KEELSON_APP_ID"
+        ]
+      }
+    },
+    {
+      "name": "local_with_workspace_id",
+      "env": {
+        "KEELSON_LOCAL_MODE": "1",
+        "KEELSON_WORKSPACE_ID": "ws-1"
+      },
+      "expected": {
+        "sdk": "error",
+        "cli_refuses": true,
+        "marks": [
+          "KEELSON_WORKSPACE_ID"
+        ]
+      }
+    },
+    {
+      "name": "local_with_legacy_tenant_id",
+      "env": {
+        "KEELSON_LOCAL_MODE": "1",
+        "KEELSON_TENANT_ID": "ws-1"
+      },
+      "expected": {
+        "sdk": "error",
+        "cli_refuses": true,
+        "marks": [
+          "KEELSON_TENANT_ID"
+        ]
+      }
+    },
+    {
+      "name": "local_with_deploy_id",
+      "env": {
+        "KEELSON_LOCAL_MODE": "yes",
+        "KEELSON_DEPLOY_ID": "dep-1"
+      },
+      "expected": {
+        "sdk": "error",
+        "cli_refuses": true,
+        "marks": [
+          "KEELSON_DEPLOY_ID"
+        ]
+      }
+    },
+    {
+      "name": "local_with_app_url",
+      "env": {
+        "KEELSON_LOCAL_MODE": "1",
+        "KEELSON_APP_URL": "https://example.invalid"
+      },
+      "expected": {
+        "sdk": "error",
+        "cli_refuses": true,
+        "marks": [
+          "KEELSON_APP_URL"
+        ]
+      }
+    },
+    {
+      "name": "local_with_blank_app_id",
+      "env": {
+        "KEELSON_LOCAL_MODE": "1",
+        "KEELSON_APP_ID": "   "
+      },
+      "expected": {
+        "sdk": "local",
+        "cli_refuses": false
+      }
+    },
+    {
+      "name": "local_with_several_marks",
+      "env": {
+        "KEELSON_LOCAL_MODE": "1",
+        "KEELSON_APP_URL": "https://example.invalid",
+        "KEELSON_APP_ID": "app-1",
+        "KEELSON_MODE": "keelson"
+      },
+      "expected": {
+        "sdk": "error",
+        "cli_refuses": true,
+        "marks": [
+          "KEELSON_MODE=keelson",
+          "KEELSON_APP_ID",
+          "KEELSON_APP_URL"
+        ]
+      }
+    },
+    {
+      "name": "production_without_local_mode",
+      "env": {
+        "KEELSON_MODE": "keelson",
+        "KEELSON_APP_ID": "app-1"
+      },
+      "expected": {
+        "sdk": "not_local",
+        "cli_refuses": true,
+        "marks": [
+          "KEELSON_MODE=keelson",
+          "KEELSON_APP_ID"
+        ]
+      }
+    },
+    {
+      "name": "local_mode_off_with_mark",
+      "env": {
+        "KEELSON_LOCAL_MODE": "0",
+        "KEELSON_APP_ID": "app-1"
+      },
+      "expected": {
+        "sdk": "not_local",
+        "cli_refuses": true,
+        "marks": [
+          "KEELSON_APP_ID"
+        ]
+      }
+    },
+    {
+      "name": "nothing_set",
+      "env": {},
+      "expected": {
+        "sdk": "not_local",
+        "cli_refuses": false
+      }
+    }
+  ]
+}

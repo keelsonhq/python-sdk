@@ -1060,7 +1060,7 @@ class TestSendPayload:
         assert request.get_header("Accept") == "application/json"
         # T-0595: urllib's default UA (Python-urllib/3.x) is blocked by
         # Cloudflare BIC (Error 1010) on the *.keelson.run zones.
-        assert request.get_header("User-agent") == "Keelson-Python-SDK/0.2.0"
+        assert request.get_header("User-agent") == "Keelson-Python-SDK/0.2.1"
         assert json.loads(request.data) == {
             "to": ["a@example.com"],
             "subject": "Subject",
@@ -1085,7 +1085,7 @@ class TestSendPayload:
 
         request = mock_urlopen.call_args.args[0]
         assert request.full_url == "http://gateway.test/__keelson/email/send"
-        assert request.get_header("User-agent") == "Keelson-Python-SDK/0.2.0"
+        assert request.get_header("User-agent") == "Keelson-Python-SDK/0.2.1"
 
     def test_legacy_error_contract_is_unchanged(self):
         error = HTTPError(
@@ -1154,7 +1154,7 @@ class TestAttachmentDownload:
         assert request.method == "GET"
         assert request.get_header("Authorization") == "Bearer token"
         assert request.get_header("Accept") == "application/octet-stream"
-        assert request.get_header("User-agent") == "Keelson-Python-SDK/0.2.0"
+        assert request.get_header("User-agent") == "Keelson-Python-SDK/0.2.1"
         assert request.get_header("Content-type") is None
         assert request.data is None
         assert mock_urlopen.call_args.kwargs == {"timeout": 9.0}
@@ -1184,7 +1184,7 @@ class TestAttachmentDownload:
             "http://gateway.test/__keelson/email/attachments/att_from_payload_id"
         )
         assert "must-not-be-used" not in request.full_url
-        assert request.get_header("User-agent") == "Keelson-Python-SDK/0.2.0"
+        assert request.get_header("User-agent") == "Keelson-Python-SDK/0.2.1"
 
     def test_legacy_download_error_contract_is_unchanged(self):
         error = HTTPError(

@@ -14,7 +14,7 @@ from urllib.parse import quote
 from urllib.request import Request, urlopen
 
 _CROCKFORD_BASE32 = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
-_SDK_USER_AGENT = "Keelson-Python-SDK/0.2.0"
+_SDK_USER_AGENT = "Keelson-Python-SDK/0.2.1"
 
 
 class MediaError(RuntimeError):

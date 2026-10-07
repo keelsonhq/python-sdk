@@ -11,10 +11,6 @@ import pytest
 import keelson_tasks as tasks
 from keelson_tasks.tests.helpers import install_fake_cli, task_result
 
-pytestmark = pytest.mark.skipif(
-    os.name == "nt", reason="the fake CLI is a POSIX shebang script"
-)
-
 
 def test_local_enqueue_runs_cli_and_get_returns_result(monkeypatch, tmp_path) -> None:
     fake = install_fake_cli(monkeypatch, tmp_path)
@@ -148,9 +144,11 @@ def test_local_missing_cli_error_has_install_hint(monkeypatch, tmp_path) -> None
 
 
 def test_local_unstartable_cli_is_cli_failed(monkeypatch, tmp_path) -> None:
-    install_fake_cli(monkeypatch, tmp_path)
-    # Executable bit set, but not a valid executable format.
-    (tmp_path / "bin" / "keelson").write_bytes(b"\x00\x01garbage")
+    fake = install_fake_cli(monkeypatch, tmp_path)
+    # Found on PATH, but not a valid executable format. On Windows a .exe wins
+    # over the fake's .cmd in PATHEXT order.
+    garbage = fake.bin_dir / "keelson.exe" if os.name == "nt" else fake.executable
+    garbage.write_bytes(b"\x00\x01garbage")
     with pytest.raises(tasks.TasksError) as info:
         tasks.enqueue("generate-pdf")
     assert info.value.code == "TASKS_LOCAL_CLI_FAILED"

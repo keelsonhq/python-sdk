@@ -1,6 +1,8 @@
 # Keelson Python SDK
 
-Python SDK for building apps on the [Keelson](https://keelson.dev) platform ([SDK guide](https://keelson.dev/docs/building-apps/sdk/)). Provides four modules:
+SDK guide: https://keelson.dev/docs/building-apps/sdk/
+
+Python SDK for building apps on the Keelson platform. Provides four modules:
 
 > **Note**: This repository is a read-only release mirror. Development happens in the private Keelson monorepo; issues are welcome here, but pull requests are not accepted — changes land through the next release.
 
@@ -320,6 +322,7 @@ groups = list_groups(app_token=os.environ["KEELSON_DIRECTORY_TOKEN"])
 | Function | Signature | Description |
 |----------|-----------|-------------|
 | `get_current_user` | `(headers=...) -> UserIdentity` | Parse the current user's basic profile from trusted `X-Keelson-User-*` headers; no network call |
+| `get_request_user` | `(*, headers=None) -> RequestUser` | The current user plus app permissions (`perms`) from trusted headers; no network call |
 | `get_current_identity` | `(headers=..., app_token=...) -> CurrentIdentity` | Fetch the current user's full identity as the app actor |
 | `list_members` | `(*, base_url=None, cookie=None, authorization=None, app_token=None, **filters) -> PaginatedMembers` | List workspace members |
 | `get_user` | `(user_id, *, base_url=None, cookie=None, authorization=None, app_token=None) -> MemberItem` | Get user by ID |
@@ -328,6 +331,21 @@ groups = list_groups(app_token=os.environ["KEELSON_DIRECTORY_TOKEN"])
 `get_current_user` and `get_current_identity` accept common request header
 mappings. The required header is `x-keelson-user-id`; `x-keelson-user-email`
 and `x-keelson-user-name` are optional.
+
+`get_request_user` returns `RequestUser(id, email, name, perms)`. `perms` is
+`x-keelson-user-app-perms` split on `,` (trimmed, empty items dropped, order
+kept), e.g. `["view", "manage"]`; a missing or empty header gives `[]` (machine
+and webhook requests carry none). The gateway sends non-ASCII values such as a
+Japanese name as raw UTF-8 bytes; when a framework hands them over as a latin-1
+string, `get_request_user` restores the UTF-8 text (`get_current_user` does not).
+
+```python
+from keelson_identity import get_request_user
+
+user = get_request_user(headers=request.headers)
+if "manage" not in user.perms:
+    ...  # return 403 from admin endpoints
+```
 
 Directory functions also support app-as-actor access with `app_token` or the
 `KEELSON_DIRECTORY_TOKEN` env fallback. Keep app tokens on the server.
@@ -338,7 +356,8 @@ served by Clerk (`img.clerk.com`), or `None` when the member has not uploaded
 an image (render initials instead). Append `width` / `height` query parameters
 to get a resized image. Store only the member `id` in your app's DB and
 re-fetch `image_url` on display rather than relying on the URL to change when
-the member replaces their image. Local mode returns `image_url=None` for every member.
+the member replaces their image. Local mode returns `image_url=None` for every
+member unless a local users file sets it.
 
 ### Python-specific helpers
 
@@ -346,7 +365,7 @@ the member replaces their image. Local mode returns `image_url=None` for every m
 |----------|-----------|-------------|
 | `is_local_mode` | `() -> bool` | Check if running in local mode |
 
-**Data classes**: `CurrentIdentity`, `UserIdentity`, `WorkspaceIdentity`, `AppIdentity`, `AttributesIdentity`, `MemberItem`, `PaginatedMembers`, `GroupItem`.
+**Data classes**: `CurrentIdentity`, `UserIdentity`, `RequestUser`, `WorkspaceIdentity`, `AppIdentity`, `AttributesIdentity`, `MemberItem`, `PaginatedMembers`, `GroupItem`.
 
 **Exception**: `IdentityError`.
 
@@ -381,13 +400,67 @@ kept nullable for backward compatibility, but the server always populates it;
 | Local | `KEELSON_LOCAL_MODE=1` | Returns deterministic fixture data (no HTTP calls) |
 | Keelson | Default | Calls the Keelson auth gateway via the platform-injected `KEELSON_DIRECTORY_BASE_URL`. |
 
+### Local mode
+
+With `KEELSON_LOCAL_MODE` set to `1` / `true` / `yes`, every identity and
+Directory function returns fixed data and never reads headers or calls the
+Directory API.
+
+**Refused in a Keelson deployment.** Local mode is for local development only.
+If `KEELSON_MODE=keelson` or any of `KEELSON_APP_ID`, `KEELSON_WORKSPACE_ID`,
+`KEELSON_TENANT_ID`, `KEELSON_DEPLOY_ID`, `KEELSON_APP_URL` is set, every
+function raises `IdentityError` naming the variables found, instead of
+returning fixed data or falling back to the production path. Unset
+`KEELSON_LOCAL_MODE` there.
+
+**Without a users file**, the fixed user is `KEELSON_LOCAL_USER_ID` /
+`_EMAIL` / `_NAME` (default `local-user-001` / `dev@localhost` /
+`Local Developer`) with the workspace role `KEELSON_LOCAL_WORKSPACE_ROLE`
+(default `OWNER`); members are that user plus Alice / Bob / Carol, and groups
+are `everyone` / `developers` / `admins` / `owners`. `get_request_user` returns
+the fixed user with `perms=["view", "manage"]`.
+
+**With a users file**, the fixed user, members, groups, and full identity come
+from the file. The SDK reads the file named by `KEELSON_LOCAL_USERS_FILE`, or
+`./.keelson/dev-users.json` (relative to the working directory) when it exists:
+
+```json
+{
+  "users": [
+    { "id": "sample-tanaka", "email": "tanaka@example.com", "name": "田中 太郎", "perms": ["view", "manage"] },
+    { "id": "sample-sato", "email": "sato@example.com", "name": "佐藤 花子", "perms": ["view"], "image_url": null }
+  ]
+}
+```
+
+- `users` is non-empty; `id` is a non-empty unique string; `email` and `name`
+  are strings (may be empty); `perms` contains `view`, only `view` / `manage`,
+  without duplicates; `image_url` is an optional string or `null`. Unknown keys
+  are ignored.
+- The fixed user (`get_current_user`, `get_request_user`,
+  `get_current_identity`) is the first user with `manage`, else the first
+  user. A blank `email` / `name` becomes `None` in `get_current_user` /
+  `get_request_user`.
+- Members keep the file order; `role` is `ADMIN` with `manage`, else
+  `APP_USER`. Groups are exactly `admins` (the `manage` users) and `everyone`.
+- Full identity: `app.permissions` is the sorted `perms`, `app.roles` is `[]`,
+  `attributes.groups` is `["admins", "everyone"]` or `["everyone"]`.
+- `KEELSON_LOCAL_USER_*` and `KEELSON_LOCAL_WORKSPACE_ROLE` are ignored;
+  `KEELSON_LOCAL_WORKSPACE_ID` and `KEELSON_LOCAL_APP_ID` still apply.
+- A file that is missing (when named explicitly), unreadable, or malformed
+  raises `IdentityError`; the SDK never falls back to the built-in data.
+- The file is read on each call; it is ignored when local mode is off.
+
 ### Environment variables
 
 | Variable | Description |
 |----------|-------------|
-| `KEELSON_LOCAL_MODE` | Set to `1` to enable local mode (returns fixture data, no HTTP calls). |
+| `KEELSON_LOCAL_MODE` | Set to `1` / `true` / `yes` to enable local mode (returns fixture data, no HTTP calls). Refused when a Keelson deployment is detected. |
+| `KEELSON_LOCAL_USERS_FILE` | Local users file for local mode (default: `./.keelson/dev-users.json` when it exists). |
+| `KEELSON_LOCAL_USER_ID` / `KEELSON_LOCAL_USER_EMAIL` / `KEELSON_LOCAL_USER_NAME` | Override the local fixed user when there is no users file. |
 | `KEELSON_LOCAL_WORKSPACE_ID` | Override the local workspace ID. |
-| `KEELSON_LOCAL_WORKSPACE_ROLE` | Override the local workspace role. |
+| `KEELSON_LOCAL_WORKSPACE_ROLE` | Override the local workspace role when there is no users file. |
+| `KEELSON_LOCAL_APP_ID` | Override the local app ID (default: `local-app-001`). |
 | `KEELSON_DIRECTORY_BASE_URL` | **Canonical, platform-injected** base URL for `get_current_identity` and Directory calls. Use this. |
 | `KEELSON_DIRECTORY_TOKEN` | App token for app-as-actor identity and Directory access. |
 | `KEELSON_IDENTITY_BASE_URL` | Deprecated compatibility alias used only when neither `base_url` nor `KEELSON_DIRECTORY_BASE_URL` is set. |
