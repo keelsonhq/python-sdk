@@ -2,7 +2,7 @@
 
 SDK guide: https://keelson.dev/docs/building-apps/sdk/
 
-Python SDK for building apps on the Keelson platform. Provides four modules:
+Python SDK for building apps on the Keelson platform. Provides five modules:
 
 > **Note**: This repository is a read-only release mirror. Development happens in the private Keelson monorepo; issues are welcome here, but pull requests are not accepted — changes land through the next release.
 
@@ -12,6 +12,7 @@ Python SDK for building apps on the Keelson platform. Provides four modules:
 | `keelson_files` | `from keelson import files` | Data files (key-addressed, overwrite, private) |
 | `keelson_identity` | `from keelson import identity` | User identity and directory |
 | `keelson_tasks` | `from keelson import tasks` | Background tasks (enqueue, get) |
+| `keelson_email` | `from keelson import email` | Outbound email and delivery events |
 
 Cross-language parity across Node, Python, and Go is defined in
 [`./PARITY.md`](./PARITY.md). APIs below are labelled as
@@ -467,6 +468,125 @@ from the file. The SDK reads the file named by `KEELSON_LOCAL_USERS_FILE`, or
 
 ---
 
+## Email SDK (`keelson_email`)
+
+Send email to your app's users and receive delivery events (delivered /
+bounce / complaint). Keelson injects the endpoint, token, and webhook signing
+secret at deploy time; no `keelson.yaml` setting is needed. Full guide:
+https://keelson.dev/docs/building-apps/external-integrations/#send-email
+
+```python
+from keelson import email
+
+result = email.send(
+    to="user@example.com",
+    subject="Request received",
+    text="We received request 1234.",
+)
+# Store result["send_id"] to match it with delivery events later
+print(result["send_id"], result["status"])
+```
+
+Sending rules:
+
+- The sender is always `<app-slug>@mail.keelson.run`. `from_name` and
+  `reply_to` can be set; custom sender domains are not available
+- Send only business communication to your app's users
+  ([Acceptable Use Policy](https://keelson.dev/aup/) 2.3). Marketing
+  campaigns and sending to people who do not use the app are not allowed
+- Up to 50 recipients per message (To + CC + BCC). At least one of `text` or
+  `html` is required
+- Up to 30 sends per 60 seconds, per app and per workspace
+- Monthly recipient limits depend on the plan and are counted per app and per
+  workspace ([Plans and limits](https://keelson.dev/docs/workspace/plans-and-limits/))
+- Inbound email is not available
+
+A rejected send raises `EmailError`; the message includes the error code.
+
+| HTTP | Error code | Meaning |
+|------|------------|---------|
+| 400 | `RECIPIENT_SUPPRESSED` | A recipient is on the workspace suppression list |
+| 403 | `EMAIL_SENDING_SUSPENDED` | Sending is suspended for the workspace (too many permanent bounces or complaints). Contact Keelson to lift it |
+| 422 | `RECIPIENT_LIMIT_EXCEEDED` | More than 50 recipients |
+| 429 | `RATE_LIMIT_EXCEEDED` | 60-second send limit reached. Retry later |
+| 429 | `MONTHLY_QUOTA_EXCEEDED` | Monthly recipient limit reached |
+| 429 | `GLOBAL_RATE_LIMIT_EXCEEDED` / `GLOBAL_DAILY_QUOTA_EXCEEDED` | Platform-wide sending volume limit reached. Retry later |
+| 502 | `SEND_OUTCOME_UNKNOWN` | Outcome could not be confirmed; the message may have been sent. Do not retry automatically |
+
+### Delivery events
+
+Keelson posts signed delivery events to your app at
+`POST /api/webhooks/email-events`. Verify the signature with
+`KEELSON_EMAIL_WEBHOOK_SECRET` over the raw request body, then match the
+event to your send record with `send_id`.
+
+```python
+import os
+
+from flask import Flask, request
+from keelson import email
+
+app = Flask(__name__)
+
+
+@app.post("/api/webhooks/email-events")
+def email_events():
+    event = email.verify_event_webhook(
+        request.get_data(),
+        request.headers,
+        os.environ["KEELSON_EMAIL_WEBHOOK_SECRET"],
+    )
+    if event.event_type == "bounce" and event.bounce_type == "hard":
+        ...  # Look up the send by event.send_id and mark event.email_address invalid
+    return "", 204
+```
+
+`EmailEventPayload` fields: `event_id`, `event_type` (`delivered` / `bounce`
+/ `complaint`), `email_address`, `send_id`, `bounce_type` (`hard` / `soft`,
+bounces only), `detail`, `provider`, `timestamp`. Delivery is at-least-once;
+use `event_id` to detect duplicates.
+
+Permanent bounces and complaints add the address to the workspace
+suppression list automatically, whether or not the app handles the event.
+After that, no app in the workspace can send to it (`RECIPIENT_SUPPRESSED`).
+Owners and Admins can review the list under Email in the console's workspace
+settings.
+
+### Cross-language guaranteed API
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `send` | `(*, to, subject, text=None, html=None, **kwargs) -> dict` | Send an email; returns `{"send_id", "status"}` |
+| `verify_event_webhook` | `(body, headers, secret) -> EmailEventPayload` | Verify Svix signature and parse event |
+| `verify_event_webhook_bytes` | `(body, headers, secret) -> EmailEventPayload` | Verify event from raw bytes |
+| `set_idempotency_store` | `(store)` | Plug in a shared store to suppress duplicate deliveries across instances |
+
+### Python-specific helpers
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `on_event` | `(handler)` | Decorator that registers a synchronous event handler and starts a standalone webhook server on `PORT` |
+| `serve` | `(*, port=None, blocking=True)` | Start the webhook server manually |
+
+`on_event` / `serve()` start their own HTTP server, so use them only when the
+app has no other server listening on `PORT`. They verify signatures
+automatically with `KEELSON_EMAIL_WEBHOOK_SECRET`.
+
+**Data classes**: `Attachment`, `EmailEventPayload`.
+
+**Exception**: `EmailError`.
+
+### Environment variables
+
+| Variable | Description |
+|----------|-------------|
+| `KEELSON_EMAIL_API_URL` | Email API endpoint (injected). |
+| `KEELSON_EMAIL_TOKEN` | Bearer token for sending (injected). |
+| `KEELSON_EMAIL_WEBHOOK_SECRET` | Signing secret for delivery events (injected). |
+| `KEELSON_EMAIL_BASE_URL` | Optional app-scoped endpoint. When set, the SDK prefers it over `KEELSON_EMAIL_API_URL`. |
+
+---
+
 ## Testing
 
 Run all SDK tests:
@@ -488,6 +608,7 @@ Run tests for individual modules:
 uv run pytest keelson_media/tests/
 uv run pytest keelson_identity/tests/
 uv run pytest keelson_tasks/tests/
+uv run pytest keelson_email/tests/
 ```
 
 Lint:

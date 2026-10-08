@@ -184,11 +184,12 @@ Optional capability:
 
 - webhook server bootstrap helper
 
-Platform availability: the Keelson platform does not offer new email sending
-or inbound email at initial launch. Both capabilities remain implemented in all
-three SDKs and stay in this contract so they can be resumed. Delivery events
-for previously sent email continue through event webhook handling and webhook
-signature verification.
+Platform availability: the Keelson platform offers email sending from the
+default sender address (`<app-slug>@mail.keelson.run`) only, together with
+delivery event webhook handling and webhook signature verification. Inbound
+email is not offered. Inbound email handling and inbound attachment download
+remain implemented in all three SDKs and stay in this contract so the feature
+can be resumed, but the language READMEs do not document them.
 
 Intentional differences:
 
